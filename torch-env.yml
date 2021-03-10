@@ -1,0 +1,29 @@
+name: torch-env
+channels:
+  - conda-forge
+  - pytorch
+  - inferno-pytorch
+  # - cpape
+dependencies:
+  - pip
+  - pytorch
+  - inferno
+  - pandas
+  - nd2reader
+  - scikit-image
+  - trackpy
+  - dask
+  - dask-jobqueue
+  - distributed
+  - scipy
+  - ipython
+  - jupyter
+  - jupyterlab
+  - opencv
+  - zarr
+  - numpy
+  - tqdm
+  - napari
+  # - afforgato # cpape - for affinity segmentation
+  - pip:
+    - tensorstore

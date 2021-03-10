@@ -1,0 +1,21 @@
+# needs to be placed in the ~/.config/dask/ directory
+jobqueue:
+  slurm:
+    name: dask-worker
+    # Dask worker options
+    cores: 8                # Total number of cores per job
+    memory: 36gb                # Total amount of memory per job
+    processes: 1                # Number of Python processes per job
+    #interface: null             # Network interface to use like eth0 or ib0
+    death-timeout: 60           # Number of seconds to wait if a worker can not find a scheduler
+    local-directory: $/scratch       # Location of fast local storage like /scratch or $TMPDIR
+    # SLURM resource manager options
+    #queue: null
+    project: rl54
+    walltime: '01:00:00'
+    #extra: []
+    #env-extra: []
+    job-cpu: 8
+    job-mem: 36gb
+    #job-extra: {}
+    log-directory: $HOME/dask-logs
