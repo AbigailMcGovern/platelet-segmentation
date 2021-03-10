@@ -37,6 +37,8 @@ class ConvModule(nn.Module):
             x = self.relu1(x)
         elif self.final == 'softmax':
             x = self.sm(x)
+        elif self.final == 'sigmoid':
+            x = torch.sigmoid(x)
         return x
 
 
@@ -97,7 +99,7 @@ class UNet(nn.Module):
         self.c5 = ConvModule(256 * 2, 128)
         self.c6 = ConvModule(128 * 2, 64)
         self.c7 = ConvModule(64 * 2, 32)
-        self.c8 = ConvModule(32 * 2, out_channels, final='softmax')
+        self.c8 = ConvModule(32 * 2, out_channels, final='sigmoid')
 
         # Upsampling
         # ----------
@@ -190,8 +192,8 @@ class UNet(nn.Module):
         x = x[:, :, :, 1:-1, 1:-1]
         x = torch.cat([x, c0], 1)
         x = self.c8(x)
-        #x = self.sm(x)
         return x
+
 
 if __name__ == '__main__':
     ip = torch.randn(1, 1, 10, 256, 256)
