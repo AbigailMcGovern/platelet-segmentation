@@ -3,7 +3,7 @@ import os
 import torch
 import train
 
-METHOD = 'load weights'
+METHOD = 'load'
 
 # Directory for training data and network output 
 data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
@@ -17,7 +17,7 @@ if METHOD == 'get':
     labels_paths = [os.path.join(data_dir, '191113_IVMTR26_Inj3_cang_exp3_labels_58_GT_zyx-coords.zarr')]#, 
                   #  os.path.join(data_dir, '191113_IVMTR26_Inj3_cang_exp3_labels_t74_GT_zyx-coords.zarr')]
     unet = train.train_unet(out_dir, suffix, image_paths=image_paths, labels_paths=labels_paths, train_data='get')
-ﬁ
+
 if METHOD == 'load':
     # if training data already exists and is present in the output directory
     data_dir = os.path.join(data_dir, '210309_training')

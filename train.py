@@ -90,8 +90,9 @@ def train_unet(
     # load weights if applicable 
     if weights is not None:
         unet.load_state_dict(weights)
-    optimiser = optim.SGD(unet.parameters(), lr=lr)
-    loss = nn.BCELoss()
+    optimiser = optim.Adam(unet.parameters(), lr=lr)
+    #loss = nn.BCELoss()
+    loss = DiceLoss()
     # loop over training data 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     with tqdm(total=epochs*len(xs), desc='unet training') as progress:
@@ -157,4 +158,26 @@ def save_output(y_hats, ids, out_dir):
         p = os.path.join(out_dir, n)
         with TiffWriter(p) as tiff:
             tiff.write(y_hats[i].detach().numpy())
+
+
+class DiceLoss(nn.Module):
+    '''
+    Function from: https://www.kaggle.com/bigironsphere/loss-function-library-keras-pytorch
+    '''
+    def __init__(self, weight=None, size_average=True):
+        super(DiceLoss, self).__init__()
+
+    def forward(self, inputs, targets, smooth=1):
+        
+        #comment out if your model contains a sigmoid or equivalent activation layer
+        #inputs = F.sigmoid(inputs)       
+        
+        #flatten label and prediction tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+        
+        intersection = (inputs * targets).sum()                            
+        dice = (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)  
+        
+        return 1 - dice
 
