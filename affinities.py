@@ -125,6 +125,7 @@ def get_random_chunks(
             s_ = [slice(dim_randints[j], dim_randints[j] + shape[j]) for j in range(len(shape))]
             s_ = tuple(s_)
             x = im[s_]
+            x = normalise_data(x)
             x = torch.from_numpy(x)
             xs.append(x)
             # another successful addition, job well done you crazy mofo
@@ -259,12 +260,26 @@ def load_train_data(
         xp = x_paths[i]
         yp = y_paths[i]
         x = imread(xp)
+        x = normalise_data(x)
         y = imread(yp)
         xs.append(torch.from_numpy(x))
         ys.append(torch.from_numpy(y))
     # returns objects in the same manner as get_train_data()
     return xs, ys, ids
     
+
+def normalise_data(image):
+    '''
+    Bring image values to between 0-1
+
+    Parameters
+    ----------
+    image: np.array
+        Image data. Dtype should be float.
+    '''
+    im = image / image.max()
+    return im
+
 
 
 if __name__ =="__main__":
