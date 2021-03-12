@@ -7,8 +7,8 @@ METHOD = 'load'
 
 # Directory for training data and network output 
 data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
-out_dir = os.path.join(data_dir, '210311_training')
-suffix = 'dice-loss'
+out_dir = os.path.join(data_dir, '210312_training')
+suffix = 'normaised-images'
 
 if METHOD == 'get':
     # if training data has not yet been produced

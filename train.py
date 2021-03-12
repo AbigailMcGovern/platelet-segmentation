@@ -21,7 +21,8 @@ def train_unet(
                epochs=3, 
                lr=0.01, 
                train_data='load', 
-               weights=None
+               weights=None, 
+               loss_function='BCELoss'
                ):
     '''
     Train a basic U-Net on affinities data. Works with both whole volumes, 
@@ -85,14 +86,20 @@ def train_unet(
         else:
             d = data_dir
         xs, ys, ids = load_train_data(d)
-        print(len(xs))
+        print(f'Loaded {len(xs)} pairs of training data')
     unet = UNet()
     # load weights if applicable 
     if weights is not None:
         unet.load_state_dict(weights)
+    # define the optimiser
     optimiser = optim.Adam(unet.parameters(), lr=lr)
-    #loss = nn.BCELoss()
-    loss = DiceLoss()
+    # define the loss function
+    if loss_function == 'BCELoss':
+        loss = nn.BCELoss()
+    elif loss_function == 'DiceLoss':
+        loss = DiceLoss()
+    else:
+        raise ValueError('Valid loss options are BCELoss and DiceLoss')
     # loop over training data 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     with tqdm(total=epochs*len(xs), desc='unet training') as progress:
@@ -158,6 +165,7 @@ def save_output(y_hats, ids, out_dir):
         p = os.path.join(out_dir, n)
         with TiffWriter(p) as tiff:
             tiff.write(y_hats[i].detach().numpy())
+
 
 
 class DiceLoss(nn.Module):
