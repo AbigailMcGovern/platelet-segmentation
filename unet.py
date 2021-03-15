@@ -5,13 +5,34 @@ import torch.nn.functional as F
 
 # convolution module
 class ConvModule(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding0=1, padding1=1, final='relu'):
+    def __init__(
+                 self, 
+                 in_channels, 
+                 out_channels, 
+                 kernel_size=3, 
+                 stride=1, 
+                 padding0=1, 
+                 padding1=1, 
+                 final='relu'
+                 ):
         super(ConvModule, self).__init__()
 
         # Convolutions
         # ------------
-        self.conv0 = nn.Conv3d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding0)
-        self.conv1 = nn.Conv3d(out_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding1)
+        self.conv0 = nn.Conv3d(
+                               in_channels, 
+                               out_channels, 
+                               kernel_size=kernel_size, 
+                               stride=stride, 
+                               padding=padding0
+                               )
+        self.conv1 = nn.Conv3d(
+                               out_channels, 
+                               out_channels, 
+                               kernel_size=kernel_size, 
+                               stride=stride, 
+                               padding=padding1
+                               )
 
         # Batch Normailsation
         # -------------------
@@ -45,14 +66,26 @@ class ConvModule(nn.Module):
 # trial UNet
 class UNet(nn.Module):
 
-    def __init__(self, in_channels=1, out_channels=3, down_factors=(1, 2, 2), up='convolution'):
+    def __init__(
+                 self, 
+                 in_channels=1, 
+                 out_channels=3, 
+                 down_factors=(1, 2, 2), 
+                 up='convolution', 
+                 downsample_1_at_bottom=True
+                 ):
         '''
+        Anisotropic U-net
+
+        Parameters
+        ----------
         in_channels: int
         out_channels: int
         down_factors: tuple of int
             Factors by which to downsample in encoder
         up: str
-            'bilinear': use bilinear/nearest neighbour interpolations for up sampling in decoder
+            'bilinear': use bilinear/nearest neighbour interpolations for up 
+            sampling in decoder
             'convolution': use inverse convolutions with learnable parameters
         '''
         super(UNet, self).__init__()
@@ -80,9 +113,21 @@ class UNet(nn.Module):
                                stride=down_factors, 
                                padding=(0, 1, 1)
                                )
+        if downsample_1_at_bottom:
+            # downsample in last pool layer if down factor has been 1
+            # for an axis
+            new_down = []
+            for df in down_factors:
+                if df == 1:
+                    new_down.append(2)
+                else:
+                    new_down.append(df)
+            new_down = tuple(new_down) # probs not necessary, I like it, sue me
+        else:
+            new_down = down_factors
         self.d3 = nn.MaxPool3d(
-                               down_factors, 
-                               stride=down_factors, 
+                               new_down, 
+                               stride=new_down, 
                                padding=(0, 1, 1)
                                )
 
@@ -108,8 +153,8 @@ class UNet(nn.Module):
             self.up0 = nn.ConvTranspose3d(
                                           256, 
                                           256, 
-                                          kernel_size=down_factors, 
-                                          stride=down_factors, 
+                                          kernel_size=new_down, 
+                                          stride=new_down, 
                                           groups=256)
             self.up1 = nn.ConvTranspose3d(
                                           128, 
@@ -154,11 +199,6 @@ class UNet(nn.Module):
                                                scale_factor=down_factors
                                                )
 
-        # padding=(0, 1, 1)
-
-        # Final Softmax
-        # -------------
-        #self.sm = nn.Softmax()
 
     def forward(self, x):
         # Encoder

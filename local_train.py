@@ -7,8 +7,8 @@ METHOD = 'load'
 
 # Directory for training data and network output 
 data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
-out_dir = os.path.join(data_dir, '210312_training')
-suffix = 'normaised-images'
+out_dir = os.path.join(data_dir, '210315_training_1')
+suffix = 'weighted-BCELoss-122-fixed-grad'
 
 if METHOD == 'get':
     # if training data has not yet been produced
@@ -20,8 +20,9 @@ if METHOD == 'get':
 
 if METHOD == 'load':
     # if training data already exists and is present in the output directory
-    data_dir = os.path.join(data_dir, '210309_training')
-    unet = train.train_unet(out_dir, suffix, data_dir=data_dir)
+    train_dir = os.path.join(data_dir, 'cang_training_data')
+    valid_dir = os.path.join(data_dir, 'cang_validation_data')
+    unet = train.train_unet(out_dir, suffix, data_dir=train_dir, validation_dir=valid_dir)
 
 if METHOD == 'load weights':
     train_dir = os.path.join(data_dir, '210309_training')
