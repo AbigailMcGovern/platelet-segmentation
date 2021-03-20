@@ -195,8 +195,8 @@ def train_unet(
                         write_log(s, out_dir)
                     running_loss = 0.0
             if validate:
-                _validate(v_xs, v_ys, device, unet, v_loss, progress, 
-                         log, out_dir, validation_dict, e)
+                v_y_hats = _validate(v_xs, v_ys, device, unet, v_loss, 
+                                     progress, log, out_dir, validation_dict, e)
             _save_checkpoint(unet.state_dict(), out_dir, 
                              f'{suffix}_epoch-{e}')
     _save_checkpoint(unet.state_dict(), out_dir, suffix)
@@ -278,6 +278,7 @@ def _validate(v_xs, v_ys, device, unet, v_loss, progress,
             write_log(s, out_dir)
         validation_dict['epoch'].append(e)
         validation_dict['validation_loss'].append(score)
+    return v_y_hats
         
 
 def _prep_x_y(x, y, device):
