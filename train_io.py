@@ -39,7 +39,7 @@ def get_train_data(
         Shape of the test data to 
     channels: tuple of str
         tuple of channels to be added to the training data. 
-            Affinities: 'axis-n' (e.g., z-1)
+            Affinities: 'axis-n' (pattern: r'[xyz]-\d+' e.g., 'z-1')
             Centreness: 'centreness'
     scale: tuple of numeric
         Scale of channels. This is used in calculating centreness score.

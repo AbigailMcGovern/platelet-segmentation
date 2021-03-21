@@ -45,40 +45,69 @@ def train_unet(
     already generated and saved training data. This should probably be two 
     different functions... Oh well *laughs mischievously*
 
+    I will split this up ONE DAY... PROMISE!!!
+
     Parameters
     ----------
     out_dir: str
         Directory to which to save network output
     suffix: str
         Suffix used in naming pytorch state dictionary file
-    data_dir: None or str
-        Only applicable when loading training data. If None
+    log: bool
+        Will a log.txt file containing all console print outs be saved?
+        Default: True.
+    train_data: str
+        How is the train data obtained? If 'get', training input and labels
+        are produced from image and GT labels volumes and saved to out_dir. 
+        Else if 'load', training labels and images are loaded from data_dir
+    data_dir: None or str 
+        LOAD: Only applicable when loading training data. If None
         training data is assumed to be in the output directory.
         Otherwise, data_dir should be the directory in which 
         training data is located
     validation_dir: None or str
-        If none, no validation is performed. If provided, validation
+        LOAD: If none, no validation is performed. If provided, validation
         data is loaded from the given directory according to the 
-        same naming convention as training data. Validation is then
-        performed at the end of every epoch. 
+        same naming convention as training data. Validation is performed 
+        at the end of every epoch. 
     image_paths: None or list of str
-        Only applicable if generating trainig data from volumes.
+        GET: Only applicable if generating trainig data from volumes.
         Paths to whole voume images.
     labels_paths: None or list of str
-        Only applicable if generating trainig data from volumes.
+        GET: Only applicable if generating trainig data from volumes.
         Paths to whole voume labels. 
         Labels are expected to be in int form (typical segmentation)
+    n_each: int
+        GET: Number of image-labels pairs to obtain from each image-GT volume
+        provided.
+    channels: tuple of str
+        GET: Types of output channels to be obtained.
+            Affinities: 'axis-n' (pattern: r'[xyz]-\d+' e.g., 'z-1')
+            Centreness: 'centreness'
+    scale: tuple of numeric
+        GET: Scale of channels. This is used in calculating centreness score.
+    validation_prop: float
+        GET: If greater than 0, validation data will be generated and a 
+        validation performed at the end of every epoch. The number of 
+        pairs generated correspond to the proportion inputted.  
     epochs: int
         How many times should we go through the training data?
     lr: float
         Learning rate for Adam optimiser
-    train_data: str 
-        'load' or 'get'. Should training data be loaded from 
-        a directory or generated from whole volumes.
+    loss_function: str
+        Which loss function will be used for training & validation?
+        Current options include:
+            'BCELoss': Binary cross entropy loss
+            'WeightedBCE': Binary cross entropy loss whereby channels are weighted
+                according to chan_weights parameter. Quick way to force network to
+                favour learning information about a given channel/s.
+            'DiceLoss': 1 - DICE coefficient of the output-target pair
+    chan_weights: tuple of float
+        WEIGHTEDBCE: Weights for BCE loss for each output channel. 
     weights: None or nn.Model().state_dict()
         Prior weights with which to initalise the network.
-    auxillary: None or str
-        'centroid' or 'long_range_affs'
+    update_every: int
+        Determines how many batches are processed before printing loss
 
     Returns
     -------
