@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import re
 
 
@@ -53,3 +54,33 @@ def log_dir_or_None(log, out_dir):
         return out_dir
     else:
         return None
+
+def get_ids(paths, regex=r'\d{6}_\d{6}_\d{1,3}'):
+    ids = []
+    pattern = re.compile(regex)
+    for p in paths:
+        p = Path(p)
+        name = p.stem
+        match = pattern.search(name)
+        if match is not None:
+            ids.append(match[0])
+        else:
+            raise ValueError('Irregular ID for training data file: must be YYMMDD_HHMMSS_<digit>')
+    return ids
+
+
+def check_ids_match(x, y, regex=r'\d{6}_\d{6}_\d{1,3}'):
+    pattern = re.compile(regex)
+    m = f'Number of '
+    assert len(x) == len(y), m
+    for i in range(len(x)):
+        if not os.path.exists(x[i]): # if just an id string
+            assert x[i] == y[i]
+        else: # if the ids to be matched are in path stems
+            xn = Path(x).stem
+            yn = Path(y).stem
+            xid = pattern.search(xn)[0] # will raise error if no id found
+            yid = pattern.search(yn)[0]
+            assert xid == yid
+
+
