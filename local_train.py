@@ -1,3 +1,4 @@
+import napari
 import numpy as np
 import os
 import torch
@@ -21,8 +22,8 @@ labels_paths = [os.path.join(data_dir, '191113_IVMTR26_Inj3_cang_exp3_labels_58_
 # CHANGE THESE EACH TIME:
 # ---------------------------------------------------------------------------------------
 METHOD = 'get'
-out_dir = os.path.join(data_dir, '210321_training_0')
-suffix = 'z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c'
+out_dir = os.path.join(data_dir, '210324_training_0')
+suffix = 'z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl'
 # ---------------------------------------------------------------------------------------
 
 
@@ -31,7 +32,7 @@ if METHOD == 'get':
     # CAN CHANGE THESE TOO
     # --------------------
     n_each = 100
-    channels = ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness')
+    channels = ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log')
     validation_prop = 0.2
     scale = (4, 1, 1)
     epochs = 4

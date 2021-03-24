@@ -63,9 +63,11 @@ def get_train_data(
     """
     assert len(image_paths) == len(labels_paths)
     for i in range(len(image_paths)):
+        print(LINE)
         s = f'Generating training data from image: {image_paths[i]}, labels: {labels_paths[i]}'
         print(s)
         if log:
+            write_log(LINE, out_dir)
             write_log(s, out_dir)
         im = zarr.open_array(image_paths[i])
         l = zarr.open_array(labels_paths[i])
@@ -147,11 +149,11 @@ def get_random_chunks(
             ri = np.random.randint(0, max_)
             dim_randints.append(ri)
         # Get the network output: affinities 
-        s_ = [slice(None, None),] # affinities have three channels... we want all of them :)
+        s_ = [slice(None, None),] # 
         for j in range(len(shape)):
             s_.append(slice(dim_randints[j], dim_randints[j] + shape[j]))
         y = a[s_]
-        if y.sum() > min_affinity: # if there are a sufficient number of boarder voxels
+        if y.sum() > min_affinity * len(channels): # if there are a sufficient number of boarder voxels
             # add the affinities and image chunk to the training data 
             y = torch.from_numpy(y)
             ys.append(y)
@@ -201,6 +203,8 @@ def get_training_labels(
         elif chan == 'centreness':
             # get the centreness score
             lab = get_centreness(l, scale=scale)
+        elif chan == 'centreness-log':
+            lab = get_centreness(l, scale=scale, log=True)
         else:
             m = f'Unrecognised channel type: {chan} \n'
             m = m + 'Please enter str of form axis-n for nth affinity \n'
@@ -234,7 +238,7 @@ def nth_affinity(labels, n, axis):
     return affinities
 
 
-def get_centreness(labels, scale=(4, 1, 1)):
+def get_centreness(labels, scale=(4, 1, 1), log=False, power=False):
     """
     Obtains a centreness score for each voxel belonging to a labeled object.
     Values in each object sum to one. Values are inversely proportional
@@ -259,15 +263,16 @@ def get_centreness(labels, scale=(4, 1, 1)):
     with tqdm(total=len(centroids), desc='Score centreness') as progress:
         for i, c in enumerate(centroids):
             mask = labels == labs[i]
-            indices, values = inverse_dist_score(mask, c, scale)
+            indices, values = inverse_dist_score(mask, c, scale, log=log, power=power)
             new[indices] = values
             progress.update(1)
+    # new = np.where(np.isnan(new), 0., new)
     print('------------------------------------------------------------')
     print(f'Obtained centreness scores in {time() - t} seconds')
     return new
 
 
-def inverse_dist_score(mask, centroid, scale):
+def inverse_dist_score(mask, centroid, scale, log, power):
     '''
     Compute euclidian distances of each index from a mask
     representing a single object from the centroid of said object
@@ -281,8 +286,16 @@ def inverse_dist_score(mask, centroid, scale):
         ind = indices[i, ...]
         diff = (centre - ind) * scale
         dist = np.linalg.norm(diff)
+        if log and abs(dist) > 0:
+            m = f'Infinite value with distance of {dist}'
+            dist = np.log(dist)
+            assert not np.isinf(dist), m
+        if power:
+            dist = 2 ** dist
         distances.append(dist)
     distances = np.array(distances)
+    if log:
+        distances = distances + np.abs(distances.min()) # bring min value to 0
     norm_distances = distances / distances.max()
     values = (1 - norm_distances) 
     indices = tuple(indices.T.tolist())
@@ -333,6 +346,8 @@ def print_labels_info(channels, out_dir=None, log_name='log.txt'):
             n = f'{affinity_match[0]} affinities'
         elif chan == 'centreness':
             n = 'centreness score'
+        elif chan == 'centreness-log':
+            n = 'log centreness score'
         else:
             n = 'Unknown channel type'
         s = f'Channel {i}: {n}'

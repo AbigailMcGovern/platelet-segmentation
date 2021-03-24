@@ -4,6 +4,15 @@ import numpy as np
 from skimage.morphology._util import _offsets_to_raveled_neighbors
 
 
+def channel_losses_to_dict(inputs, targets, channels, loss_dict):
+    loss = nn.BCELoss()
+    for i, c in enumerate(channels):
+        c_input = inputs[:, i, ...].detach()
+        c_target = targets[:, i, ...].detach()
+        l = loss(c_input, c_target)
+        loss_dict[c].append(l.item())
+
+
 # --------------
 # Loss Functions
 # --------------
