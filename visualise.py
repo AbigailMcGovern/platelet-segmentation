@@ -1,6 +1,6 @@
 import dask.array as da
 from dask import delayed
-from helpers import get_paths, get_ids, check_ids_match, LINE
+from helpers import get_dataset, LINE
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvas
 from matplotlib.figure import Figure
@@ -85,19 +85,8 @@ def view_output(train_dir, channels, scale, out_dir=None, verbose=True):
     verbose: bool
         Print outs :)
     '''
-    # directory for output, if none, assume output is with training data
-    if out_dir is None:
-        out_dir = train_dir
     assert len(scale) == 3
-    # Get output paths and IDs
-    output_paths = sorted(get_paths(out_dir, r'\d{6}_\d{6}_\d{1,3}_output.tif'))
-    ids = get_ids(output_paths)
-    output = get_regex_images(out_dir, r'\d{6}_\d{6}_\d{1,3}_output.tif', ids)
-    # get training data (images and labels) according to id strings, 
-    #   which correspond to the batch number.
-    labs = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_labels.tif', ids)
-    images = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_image.tif', ids)
-    images = da.stack([images], axis=1)
+    images, labs, output = get_dataset(train_dir, out_dir)
     # prepare labels and output data for display in different channels
     # z, y, and x afiniies will be displayed according to BOP colour scheme
     labs_channels_dict = prep_channels(labs, channels, scale=scale)
@@ -150,6 +139,7 @@ def view_output(train_dir, channels, scale, out_dir=None, verbose=True):
     return v
 
 
+
 def get_empty_output(ys):
     output_shape = ys[0].shape[-4:]
     l = len(ys)
@@ -159,36 +149,6 @@ def get_empty_output(ys):
     empty = np.zeros(shape, dtype=float)
     return empty
 
-
-def get_regex_images(data_dir, regex, ids, id_regex=r'\d{6}_\d{6}_\d{1,3}'):
-    id_pattern = re.compile(id_regex)
-    imread = delayed(imread_squeeze, pure=True)  
-    file_paths = sorted(get_paths(data_dir, regex))
-    correct_paths = []
-    for ID in ids:
-        id_done = False
-        for f in file_paths:
-            n = Path(f).stem
-            id_match = id_pattern.search(n)[0] # assumes there will be one
-            if id_match == ID:
-                correct_paths.append(f)
-                id_done = True
-        m = f'No file match was found for ID: {ID}'
-        assert id_done, m
-    images = [imread(path) for path in correct_paths]  
-    sample = images[0].compute()  
-    arrays = [da.from_delayed(image,           
-                              dtype=sample.dtype,   
-                              shape=sample.shape)
-                                for image in images]
-
-    stack = da.stack(arrays, axis=0)
-    return stack
-
-
-def imread_squeeze(path):
-    img = io.imread(path)
-    return np.squeeze(img)
 
 def prep_channels(dask_stack, channels, scale=(4, 1, 1), gaussian=False, **kwargs):
     channels_dict = _empty_channels_dict(scale=scale)

@@ -5,31 +5,12 @@ from skimage.io import imread
 from skimage.measure import regionprops
 from skimage.morphology._util import _offsets_to_raveled_neighbors, _validate_connectivity
 
-selem = np.array(
-    [[[0., 0., 0.],
-      [0., 1., 0.],
-      [0., 0., 0.]],
+# ---------
+# Watershed
+# ---------
 
-     [[0., 1., 0.],
-      [1., 1., 1.],
-      [0., 1., 0.]],
-
-     [[0., 0., 0.],
-      [0., 1., 0.],
-      [0., 0., 0.]]])
-
-selem1 = np.array(
-    [[1., 1., 1.], 
-    [1., 1., 1.], 
-    [1., 1., 1.]])
-
-
-# --------------
-# Mock Watershed
-# --------------
-
-def mock_watershed(image, marker_coords, mask, 
-                   compactness, affinities=False):
+def watershed(image, marker_coords, mask, 
+                   compactness=0, affinities=True):
     prepped_data = prep_data(image, marker_coords, mask, affinities)
     image_raveled, marker_coords, offsets, mask, output, strides = prepped_data
     output = slow_raveled_watershed(image_raveled, marker_coords, 
@@ -95,7 +76,7 @@ def raveled_coordinate(coordinate, shape):
     
 
 def _indices_to_raveled_affinities(image_shape, selem, centre):
-    im_offsets = _offsets_to_raveled_neighbors(image.shape, selem, centre)
+    im_offsets = _offsets_to_raveled_neighbors(image_shape, selem, centre)
     affs = np.concatenate([np.arange(len(image_shape)), 
                            np.arange(len(image_shape))[::-1]])
     indices = np.stack([affs, im_offsets], axis=1)
@@ -282,13 +263,13 @@ if __name__ == '__main__':
     distance = ndi.distance_transform_edt(image)
     coords = peak_local_max(distance, footprint=np.ones((3, 3)), labels=image)
     distance = 1 - (distance / distance.max())
-    out = mock_watershed(distance, coords, image, 0)
+    out = watershed(distance, coords, image, 0, affinities=False)
     from train_io import get_affinities
     affs = get_affinities(out.copy())
     from skimage.filters import gaussian
-    a_out = mock_watershed(affs.copy(), coords, image, 0, affinities=True)
+    a_out = watershed(affs.copy(), coords, image, 0, affinities=True)
     affs_g = np.stack([gaussian(affs[i], sigma=1) for i in range(affs.shape[0])])
-    ag_out = mock_watershed(affs_g.copy(), coords, image, 0, affinities=True)
+    ag_out = watershed(affs_g.copy(), coords, image, 0, affinities=True)
     import napari
     v = napari.view_labels(image, name='mask', blending='additive', visible=False)
     v.add_labels(out, name='watershed', blending='additive', visible=False)
