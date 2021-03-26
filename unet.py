@@ -5,13 +5,57 @@ import torch.nn.functional as F
 
 # convolution module
 class ConvModule(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding0=1, padding1=1, final='relu'):
+    def __init__(
+                 self, 
+                 in_channels, 
+                 out_channels, 
+                 kernel_size=3, 
+                 stride=1, 
+                 padding0=1, 
+                 padding1=1, 
+                 final='relu'
+                 ):
+        """
+        Convolution module with 2x batch normaisation --> convolution. 
+        First activation function is ReLU. Second activation defaults to ReLU
+        but options also include SoftMax and Sigmoid.
+
+        Parameters
+        ----------
+        in_channels: int 
+            Number of input channels for data
+        out_channels: int
+            Number of desired output channels
+        kernel_size: int or tuple of int
+            Size of convolution kernel
+        stride: int or tuple of int
+            Size of stride to use during convolution
+        padding0: int or tuple of int
+            Size with which to pad data for first convolution
+        padding1: int or tuple of int
+            Size with which to pad data for second convolution
+        final: str
+            Option for final activation function: 
+            'relu', 'softmax', or 'sigmoid'
+        """
         super(ConvModule, self).__init__()
 
         # Convolutions
         # ------------
-        self.conv0 = nn.Conv3d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding0)
-        self.conv1 = nn.Conv3d(out_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding1)
+        self.conv0 = nn.Conv3d(
+                               in_channels, 
+                               out_channels, 
+                               kernel_size=kernel_size, 
+                               stride=stride, 
+                               padding=padding0
+                               )
+        self.conv1 = nn.Conv3d(
+                               out_channels, 
+                               out_channels, 
+                               kernel_size=kernel_size, 
+                               stride=stride, 
+                               padding=padding1
+                               )
 
         # Batch Normailsation
         # -------------------
@@ -42,17 +86,45 @@ class ConvModule(nn.Module):
         return x
 
 
+class ResConvModule(nn.Module):
+
+    def __init__(
+                 self, 
+                 in_channels, 
+                 out_channels, 
+                 kernel_size=3, 
+                 stride=1, 
+                 padding0=1, 
+                 padding1=1, 
+                 final='relu'):
+        """
+        """
+        super(ResConvModule, self).__init__()
+
+
 # trial UNet
 class UNet(nn.Module):
 
-    def __init__(self, in_channels=1, out_channels=3, down_factors=(1, 2, 2), up='convolution'):
+    def __init__(
+                 self, 
+                 in_channels=1, 
+                 out_channels=3, 
+                 down_factors=(1, 2, 2), 
+                 up='convolution', 
+                 downsample_1_at_bottom=True
+                 ):
         '''
+        Anisotropic U-net
+
+        Parameters
+        ----------
         in_channels: int
         out_channels: int
         down_factors: tuple of int
             Factors by which to downsample in encoder
         up: str
-            'bilinear': use bilinear/nearest neighbour interpolations for up sampling in decoder
+            'bilinear': use bilinear/nearest neighbour interpolations for up 
+            sampling in decoder
             'convolution': use inverse convolutions with learnable parameters
         '''
         super(UNet, self).__init__()
@@ -80,9 +152,11 @@ class UNet(nn.Module):
                                stride=down_factors, 
                                padding=(0, 1, 1)
                                )
+        # the input will be downsampled in previously un
+        new_down = self.new_down_factors(down_factors, downsample_1_at_bottom)
         self.d3 = nn.MaxPool3d(
-                               down_factors, 
-                               stride=down_factors, 
+                               new_down, 
+                               stride=new_down, 
                                padding=(0, 1, 1)
                                )
 
@@ -108,8 +182,8 @@ class UNet(nn.Module):
             self.up0 = nn.ConvTranspose3d(
                                           256, 
                                           256, 
-                                          kernel_size=down_factors, 
-                                          stride=down_factors, 
+                                          kernel_size=new_down, 
+                                          stride=new_down, 
                                           groups=256)
             self.up1 = nn.ConvTranspose3d(
                                           128, 
@@ -133,32 +207,45 @@ class UNet(nn.Module):
                                           groups=32
                                           )
         elif up == 'bilinear':
-            self.up0 = lambda x: F.interpolate(
-                                               x, 
-                                               mode='tconv', 
-                                               scale_factor=down_factors
-                                               )
-            self.up1 = lambda x: F.interpolate(
-                                               x, 
-                                               mode='tconv', 
-                                               scale_factor=down_factors
-                                               )
-            self.up2 = lambda x: F.interpolate(
-                                               x, 
-                                               mode='tconv', 
-                                               scale_factor=down_factors
-                                               )
-            self.up3 = lambda x: F.interpolate(
-                                               x, 
-                                               mode='tconv', 
-                                               scale_factor=down_factors
-                                               )
+            self.up0 = lambda x: self.bilinear_interpolation(x, down_factors)
+            self.up1 = lambda x: self.bilinear_interpolation(x, down_factors)
+            self.up2 = lambda x: self.bilinear_interpolation(x, down_factors)
+            self.up3 = lambda x: self.bilinear_interpolation(x, down_factors)
+        else:
+            raise ValueError('Valid options for up param are convolution and bilinear')
 
-        # padding=(0, 1, 1)
 
-        # Final Softmax
-        # -------------
-        #self.sm = nn.Softmax()
+    def bilinear_interpolation(self, x, down_factors):
+        '''
+        THIS NEEDS DEBUGGING!!
+        '''
+        print(x.shape)
+        x = torch.squeeze(x, 0)
+        print(x.shape)
+        x = F.interpolate(
+                          x, 
+                          mode='tconv', 
+                          scale_factor=down_factors
+                          )
+        x = torch.unsqueeze(x, 0)
+        return x
+
+
+    def new_down_factors(self, down_factors, downsample_1_at_bottom):
+        if downsample_1_at_bottom:
+            # downsample in last pool layer if down factor has been 1
+            # for an axis
+            new_down = []
+            for df in down_factors:
+                if df == 1:
+                    new_down.append(2)
+                else:
+                    new_down.append(df)
+            new_down = tuple(new_down) # probs not necessary, I like it, sue me
+        else:
+            new_down = down_factors
+        return new_down
+
 
     def forward(self, x):
         # Encoder
@@ -193,6 +280,7 @@ class UNet(nn.Module):
         x = torch.cat([x, c0], 1)
         x = self.c8(x)
         return x
+
 
 
 if __name__ == '__main__':
