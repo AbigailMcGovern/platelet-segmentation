@@ -109,11 +109,11 @@ def _get_linestyle(lis):
 
 
 if __name__ == '__main__':
-    name = 'loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c.csv'
-    dir_ = '/Users/amcg0011/Data/pia-tracking/cang_training/210323_training_0'
+    name = 'loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl.csv'
+    dir_ = '/Users/amcg0011/Data/pia-tracking/cang_training/210324_training_0'
     path = os.path.join(dir_, name)
     save_channel_loss_plot(path)
-    v_name = 'validation-loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c.csv'
+    v_name = 'validation-loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl.csv'
     v_path = os.path.join(dir_, v_name)
     loss_function = 'BCE Loss'
     save_loss_plot(path, loss_function, v_path)
