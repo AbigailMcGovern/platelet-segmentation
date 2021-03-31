@@ -1,3 +1,4 @@
+from heapq import heappop, heappush
 import numpy as np
 import napari
 import os
@@ -10,12 +11,13 @@ from skimage.morphology._util import _offsets_to_raveled_neighbors, _validate_co
 # ---------
 
 def watershed(image, marker_coords, mask, 
-                   compactness=0, affinities=True):
-    prepped_data = prep_data(image, marker_coords, mask, affinities)
+                   compactness=0, affinities=True, scale=None):
+    dim_weights = _prep_anisotropy(scale, marker_coords)
+    prepped_data = _prep_data(image, marker_coords, mask, affinities)
     image_raveled, marker_coords, offsets, mask, output, strides = prepped_data
     output = slow_raveled_watershed(image_raveled, marker_coords, 
                                     offsets, mask, strides, compactness, 
-                                    output, affinities)
+                                    output, affinities, dim_weights)
     if affinities:
         shape = image.shape[1:]
     else:
@@ -24,7 +26,8 @@ def watershed(image, marker_coords, mask,
     return output
 
 
-def prep_data(image, marker_coords, mask=None, affinities=False, output=None):
+
+def _prep_data(image, marker_coords, mask=None, affinities=False, output=None):
     # INTENSITY VALUES
     if affinities:
         im_ndim = image.ndim - 1 # the first dim should represent affinities
@@ -47,7 +50,7 @@ def prep_data(image, marker_coords, mask=None, affinities=False, output=None):
         offsets = _indices_to_raveled_affinities(image_shape, selem, centre)
     else:
         offsets = _offsets_to_raveled_neighbors(image_shape, selem, centre)
-    raveled_markers = np.apply_along_axis(raveled_coordinate, 1, 
+    raveled_markers = np.apply_along_axis(_raveled_coordinate, 1, 
                                           marker_coords, **{'shape':image_shape})
     if mask is None:
         small_shape = [s - 2 for s in image_shape]
@@ -63,7 +66,7 @@ def prep_data(image, marker_coords, mask=None, affinities=False, output=None):
     return raveled_image, raveled_markers, offsets, mask_raveled, output, strides
 
 
-def raveled_coordinate(coordinate, shape):
+def _raveled_coordinate(coordinate, shape):
     # array[z, y, x] = array.ravel()[z * array.shape[1] * array.shape[2] + y * array.shape[2] + x]
     raveled_coord = 0
     for i in range(len(coordinate)):
@@ -77,19 +80,37 @@ def raveled_coordinate(coordinate, shape):
 
 def _indices_to_raveled_affinities(image_shape, selem, centre):
     im_offsets = _offsets_to_raveled_neighbors(image_shape, selem, centre)
+    #im_offsets[-len(image_shape):] = 0
     affs = np.concatenate([np.arange(len(image_shape)), 
                            np.arange(len(image_shape))[::-1]])
     indices = np.stack([affs, im_offsets], axis=1)
     return indices
 
 
+def _prep_anisotropy(scale, marker_coords):
+    dim_weights = None
+    if scale is not None:
+        # validate that the scale is appropriate for coordinates
+        assert len(scale) == marker_coords.shape[1] 
+        dim_weights = list(scale) + list(scale)[::-1]
+    return dim_weights
+
 
 def slow_raveled_watershed(image_raveled, marker_coords, offsets, mask, 
-                           strides, compactness, output, affinities):
+                           strides, compactness, output, affinities, 
+                           dim_weights):
+    '''
+    Parameters
+    ----------
+
+    '''
     heap = Heap()
     n_neighbors = offsets.shape[0]
     age = 1
     compact = compactness > 0
+    anisotropic = dim_weights is not None
+    aff_offsets = offsets.copy()
+    aff_offsets[:int(len(offsets) / 2), 1] = 0
     # add each seed to the stack
     for i in range(marker_coords.shape[0]):
         elem = Element()
@@ -105,7 +126,7 @@ def slow_raveled_watershed(image_raveled, marker_coords, offsets, mask,
     # remove from stack until empty
     while not heap.is_empty:
         elem = heap.pop()
-        if compact:
+        if compact: # or anisotropic:
             if output[elem.index] and elem.index != elem.source:
                 # non-marker, already visited, move on to next item
                 continue
@@ -117,7 +138,7 @@ def slow_raveled_watershed(image_raveled, marker_coords, offsets, mask,
                 # affinities and image neighbour indices respectively
                 neighbor_index = offsets[i, 1] + elem.index
                 # in this case the index used to find elem.value will be 2d tuple
-                affinity_index = tuple(offsets[i] + np.array([0, elem.index]))
+                affinity_index = tuple(aff_offsets[i] + np.array([0, elem.index]))
             else:
                 neighbor_index = offsets[i] + elem.index
             if not mask[neighbor_index]:
@@ -134,9 +155,15 @@ def slow_raveled_watershed(image_raveled, marker_coords, offsets, mask,
             else:
                 new_elem.value = image_raveled[neighbor_index]
             if compact:
+                # weight values according to distance from source voxel
                 new_elem.value += (compactness *
                                        _euclid_dist(neighbor_index, elem.source,
                                                         strides))
+            if anisotropic:
+                dim_weight = dim_weights[i]
+                # weight the value according to scale 
+                # (may need to introduce a scaling hyperparameter)
+                new_elem.value = new_elem.value * dim_weight
             output[neighbor_index] = output[elem.index]
             new_elem.age = age
             new_elem.index = neighbor_index
@@ -191,12 +218,11 @@ class Heap:
     def __init__(self):
         self.items = {}
         self.values = []
-        self.ids = []
         self.id = 0
 
     @property
     def is_empty(self):
-        return len(self.ids) == 0
+        return len(self.items) == 0
 
     def push(self, item: Element):
         '''
@@ -208,15 +234,8 @@ class Heap:
         '''
         # add the item to the new ID
         self.items[self.id] = item
-        self.ids.append(self.id)
-        self.values.append(item.value)
-        # get the ID current order and the current values
-        old_id_order = np.array(self.ids)
-        old_value_list = np.array(self.values)
-        # sort the ID order according to values (lowest @ -1)
-        new_indicies = np.argsort(old_value_list)[::-1]
-        self.ids = old_id_order[new_indicies].tolist()
-        self.values = old_value_list[new_indicies].tolist()
+        new_id = self.id
+        heappush(self.values, (item.value, new_id))
         # new ID
         self.id += 1
 
@@ -224,23 +243,12 @@ class Heap:
         '''
         Remove the highest value element from the heap
         '''
-        elem = self.items.pop(self.ids[-1])
-        self.ids = self.ids[:-1]
-        self.values = self.values[:-1]
+        _, ID = heappop(self.values)
+        elem = self.items.pop(ID)
         return elem
-
-    def peek(self):
-        return self.items[self.ids[-1]]
 
     def size(self):
         return len(self.items)
-
-
-# not used
-def get_centroids(labels):
-    centroids = [prop['centroid'] for prop in regionprops(labels)]
-    centroids = np.round(np.stack(centroids).T).astype(int)
-    return centroids
 
 
 if __name__ == '__main__':

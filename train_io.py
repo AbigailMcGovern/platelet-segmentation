@@ -4,6 +4,7 @@ import numpy as np
 import os
 from pathlib import Path
 import re
+import skimage.filters as filters
 from skimage.measure import regionprops
 from skimage.morphology._util import _offsets_to_raveled_neighbors
 from tifffile import TiffWriter, imread
@@ -101,7 +102,7 @@ def get_random_chunks(
                       out_dir, 
                       shape=(10, 256, 256), 
                       n=25, 
-                      min_affinity=100, 
+                      min_affinity=300, 
                       channels=('z-1', 'y-1', 'x-1', 'centreness'),
                       scale=(4, 1, 1), 
                       log=True
@@ -141,6 +142,7 @@ def get_random_chunks(
     a = get_training_labels(l, channels=channels, scale=scale)
     xs = []
     ys = []
+    labs = []
     i = 0
     while i < n:
         dim_randints = []
@@ -164,6 +166,10 @@ def get_random_chunks(
             x = normalise_data(x)
             x = torch.from_numpy(x)
             xs.append(x)
+            # get the GT labels so that later quatitative comparison can be made with final
+            #   segmentation  
+            lab = l[s_]
+            labs.append(lab)
             # another successful addition, job well done you crazy mofo
             i += 1
 
@@ -175,7 +181,7 @@ def get_random_chunks(
         write_log(s, out_dir)
     log_dir = log_dir_or_None(log, out_dir)
     print_labels_info(channels, out_dir=log_dir)
-    ids = save_random_chunks(xs, ys, out_dir)
+    ids = save_random_chunks(xs, ys, labs, out_dir)
     return xs, ys, ids
 
 
@@ -205,6 +211,8 @@ def get_training_labels(
             lab = get_centreness(l, scale=scale)
         elif chan == 'centreness-log':
             lab = get_centreness(l, scale=scale, log=True)
+        elif chan == 'centroid-gauss':
+            lab = get_gauss_centroids(l)
         else:
             m = f'Unrecognised channel type: {chan} \n'
             m = m + 'Please enter str of form axis-n for nth affinity \n'
@@ -302,6 +310,25 @@ def inverse_dist_score(mask, centroid, scale, log, power):
     return indices, values
 
 
+# not used
+def get_gauss_centroids(labels, sigma=1, z=0):
+    centroids = [prop['centroid'] for prop in regionprops(labels)]
+    centroids = tuple(np.round(np.stack(centroids).T).astype(int))
+    centroid_image = np.zeros(labels.shape, dtype=float)
+    centroid_image[centroids] = 1.
+    gauss_cent = []
+    for i in range(labels.shape[z]):
+        s_ = [slice(None, None)] * labels.ndim
+        s_[z] = slice(i, i+1)
+        plane = np.squeeze(centroid_image[s_])
+        gauss_cent.append(filters.gaussian(plane, sigma=sigma))
+    out = np.stack(gauss_cent, axis=z)
+    out = out - out.min()
+    out = out / out.max()
+    print(out.dtype, out.shape, out.max(), out.min())
+    return out
+
+
 # not currently referenced, uses nth_affinity() for generality
 def get_affinities(image):
     """
@@ -348,6 +375,8 @@ def print_labels_info(channels, out_dir=None, log_name='log.txt'):
             n = 'centreness score'
         elif chan == 'centreness-log':
             n = 'log centreness score'
+        elif chan == 'centroid-gauss':
+            n = 'gaussian centroids'
         else:
             n = 'Unknown channel type'
         s = f'Channel {i}: {n}'
@@ -360,7 +389,7 @@ def print_labels_info(channels, out_dir=None, log_name='log.txt'):
 # Save Output
 # -----------
 
-def save_random_chunks(xs, ys, out_dir):
+def save_random_chunks(xs, ys, labs, out_dir):
     '''
     Save the random chunks as they are sampled
     '''
@@ -383,6 +412,11 @@ def save_random_chunks(xs, ys, out_dir):
         l_path = os.path.join(out_dir, l_name)
         with TiffWriter(l_path) as tiff:
             tiff.write(ys[i].numpy())
+        # save the ground truth segmentation
+        s_name = d + '_GT.tif'
+        s_path = os.path.join(out_dir, s_name)
+        with TiffWriter(s_path) as tiff:
+            tiff.write(labs[i]) # this is already ndarray not tensor
     assert len(ids) == len(ys)
     print('------------------------------------------------------------')
     print('Training data saved at:')

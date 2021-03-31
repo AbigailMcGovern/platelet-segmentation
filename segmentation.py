@@ -11,7 +11,14 @@ from time import time
 # Segment U-net Output
 # --------------------
 
-def segment_output_image(unet_output, affinities_channels, centroids_channel, thresholding_channel):
+def segment_output_image(
+        unet_output, 
+        affinities_channels, 
+        centroids_channel, 
+        thresholding_channel, 
+        scale=None, 
+        compactness=0.
+    ):
     '''
     Parameters
     ----------
@@ -38,7 +45,9 @@ def segment_output_image(unet_output, affinities_channels, centroids_channel, th
     for c in affinities_channels:
         affinties.append(unet_output[c, ...]/unet_output[c, ...].max())
     affinties = np.stack(affinties)
-    affinties = np.pad(affinties, 1, constant_values=0)
+    affinties = np.pad(affinties, 
+                       ((0, 0), (1, 1), (1, 1), (1, 1)), 
+                       constant_values=0)
     # Get the image for finding centroids
     centroids_img = unet_output[centroids_channel]
     centroids_img = np.pad(centroids_img, 1, constant_values=0)
@@ -50,7 +59,9 @@ def segment_output_image(unet_output, affinities_channels, centroids_channel, th
     mask = _get_mask(masking_img)
     mask = np.pad(mask, 1, constant_values=0) # edge voxels must be 0
     # affinity-based watershed
-    segmentation = watershed(affinties, centroids, mask, affinities=True)
+    segmentation = watershed(affinties, centroids, mask, 
+                             affinities=True, scale=scale, 
+                             compactness=compactness)
     segmentation = segmentation[1:-1, 1:-1, 1:-1]
     seeds = centroids - 1
     print(f'Obtained segmentation in {time() - t} seconds')
@@ -83,7 +94,9 @@ if __name__ == '__main__':
     aff_chans = (0, 2, 5)
     cent_chan = 9
     mask_chan = 8
-    seg88, s88 = segment_output_image(o88, aff_chans, cent_chan, mask_chan)
+    seg88, s88 = segment_output_image(o88, aff_chans, cent_chan, mask_chan) #, scale=(4, 1, 1))
+    seg88s, s88s = segment_output_image(o88, aff_chans, cent_chan, mask_chan, scale=(4, 1, 1))
+    #seg88c, s88c = segment_output_image(o88, aff_chans, cent_chan, mask_chan, compactness=0.5) #, scale=(4, 1, 1))
     i88 = images[88]
     l88 = labs[88]
     import napari 
@@ -100,6 +113,10 @@ if __name__ == '__main__':
                 visible=False, blending='additive')
     v.add_labels(seg88, name='affinity watershed', 
                  scale=(4, 1, 1), blending='additive')
+    v.add_labels(seg88s, name='anisotropic affinity watershed', 
+                 scale=(4, 1, 1), blending='additive')
+    #v.add_labels(seg88c, name='compact affinity watershed', 
+        #         scale=(4, 1, 1), blending='additive')
     v.add_points(s88, name='seeds', scale=(4, 1, 1), size=1)
     napari.run()
 
