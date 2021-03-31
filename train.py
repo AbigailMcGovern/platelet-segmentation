@@ -6,6 +6,7 @@ import napari
 import numpy as np
 import os
 import pandas as pd
+from plots import save_loss_plot, save_channel_loss_plot
 from tifffile import TiffWriter 
 import torch 
 import torch.nn as nn
@@ -128,7 +129,8 @@ def train_unet(
     if validate:
         v_loss = _get_loss_function(loss_function, chan_weights)
         validation_dict = {'epoch' : [], 
-                           'validation_loss' : []}
+                           'validation_loss' : [], 
+                           'data_id' : []}
         no_iter = (epochs * len(xs)) + (epochs * len(v_xs))
     else:
         no_iter = epochs * len(xs)
@@ -142,11 +144,22 @@ def train_unet(
     # loop over training data 
     y_hats, v_y_hats = _train_loop(no_iter, epochs, xs, ys, ids, device, unet, 
                                    out_dir, optimiser, loss, loss_dict,  
-                                   validate, v_xs, v_ys, validation_dict, 
+                                   validate, v_xs, v_ys, v_ids, validation_dict, 
                                    v_loss, update_every, log, suffix, channels)
     _save_final_results(unet, out_dir, suffix, y_hats, ids, validate, 
                         loss_dict, v_y_hats, v_ids, validation_dict)
+    _plots(out_dir, suffix, loss_function, validate)
     return unet
+
+
+
+def _plots(out_dir, suffix, loss_function, validate):
+    l_path = os.path.join(out_dir, 'loss_' + suffix + '.csv')
+    v_path = None
+    if validate:
+        vl_path = os.path.join(out_dir, 'validation-loss_' + suffix + '.csv')
+    save_loss_plot(l_path, loss_function, v_path=v_path)
+    save_channel_loss_plot(l_path)
 
 
 
@@ -220,8 +233,8 @@ def _print_train_info(loss_function, bce_weights, epochs, lr,
 
 def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
                 optimiser, loss, loss_dict,  validate, v_xs, v_ys, 
-                validation_dict, v_loss, update_every, log, suffix, 
-                channels):
+                v_ids, validation_dict, v_loss, update_every, log, 
+                suffix, channels):
      # loop over training data 
     with tqdm(total=no_iter, desc='unet training') as progress:
         for e in range(epochs):
@@ -241,7 +254,7 @@ def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
                         write_log(s, out_dir)
                     running_loss = 0.0
             if validate:
-                v_y_hats = _validate(v_xs, v_ys, device, unet, v_loss, 
+                v_y_hats = _validate(v_xs, v_ys, v_ids, device, unet, v_loss, 
                                      progress, log, out_dir, validation_dict, e)
             else:
                 v_y_hats = None
@@ -267,7 +280,7 @@ def _train_step(i, xs, ys, ids, device, unet, optimiser,
     return l
 
 
-def _validate(v_xs, v_ys, device, unet, v_loss, progress, 
+def _validate(v_xs, v_ys, v_ids, device, unet, v_loss, progress, 
              log, out_dir, validation_dict, e):
     validation_loss = 0.0
     with torch.no_grad():
@@ -278,14 +291,15 @@ def _validate(v_xs, v_ys, device, unet, v_loss, progress,
             v_y_hats.append(v_y_hat)
             vl = v_loss(v_y_hat, v_y)
             validation_loss += vl.item()
+            validation_dict['epoch'].append(e)
+            validation_dict['validation_loss'].append(score)
+            validation_dict['data_id'].append(v_ids[i])
             progress.update(1)
         score = validation_loss / len(v_xs)
         s = f'Epoch {e} - validation loss: {score}'
         print(s)
         if log:
             write_log(s, out_dir)
-        validation_dict['epoch'].append(e)
-        validation_dict['validation_loss'].append(score)
     return v_y_hats
 
 
@@ -483,9 +497,9 @@ def _load_validation(validation_dir, out_dir, log):
 
 def train_unet_get_labels(
                           out_dir, 
-                          suffix,
                           image_paths, 
                           labels_paths,
+                          suffix='',
                           channels=('z-1', 'y-1', 'x-1', 'centreness'), 
                           n_each=100,
                           validation_prop=None, 

@@ -29,12 +29,19 @@ def plot_loss(df, vdf=None, x_lab='Iteration', y_lab='BCE Loss', save=None):
     ax.scatter(epoch_end_x, epoch_end_y)
     title = 'Training loss'
     if v_path is not None:
+        if len(v_df) > epochs:
+            vy = v_df.groupby('epoch').mean()['validation_loss'].values
+        else:
+            vy = v_df['validation_loss'].values
         v_df = pd.read_csv(v_path)
         vx = epoch_end_x
-        vy = v_df['validation_loss'].values
         title = title + ' with validation loss'
         leg.append('validation loss')
         ax.plot(vx, vy, linewidth=2, marker='o')
+        if len(v_df) > epochs:
+            vy_err = v_df.groupby('epoch').sem()['validation_loss'].values
+            ax.errorbar(vx, vy, vy_err, marker='s', mfc='orange',
+                        mec='orange')
     ax.set(xlabel=x_lab, ylabel=y_lab)
     ax.set_title(title)
     ax.legend(leg)

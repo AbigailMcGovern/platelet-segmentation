@@ -393,6 +393,7 @@ def save_random_chunks(xs, ys, labs, out_dir):
     '''
     Save the random chunks as they are sampled
     '''
+    print('out dir: ', out_dir)
     os.makedirs(out_dir, exist_ok=True)
     assert len(xs) == len(ys)
     ids = []
