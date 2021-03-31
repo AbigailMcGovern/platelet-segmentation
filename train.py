@@ -41,7 +41,8 @@ def train_unet(
                loss_function='WeightedBCE', 
                chan_weights=(1., 2., 2.), # for weighted BCE
                weights=None,
-               update_every=20
+               update_every=20, 
+               **kwargs
                ):
     '''
     Train a basic U-Net on affinities data.
@@ -364,7 +365,8 @@ def train_unet_from_directory(
                               chan_weights=(1., 2., 2.), # for weighted BCE
                               weights=None,
                               update_every=20, 
-                              channels=None
+                              channels=None, 
+                              **kwargs
                               ):
     '''
     Train a basic U-Net on affinities data. Load chunks of training data
@@ -493,7 +495,8 @@ def train_unet_get_labels(
                           loss_function='BCELoss', 
                           chan_weights=(1., 2., 2.), # for weighted BCE
                           weights=None,
-                          update_every=20
+                          update_every=20,
+                          **kwargs
                           ):
     '''
     Train a basic U-Net on affinities data. Generates chunks of training data

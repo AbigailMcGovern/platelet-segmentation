@@ -1,6 +1,10 @@
+import dask.array as da
+from dask import delayed
+import numpy as np
 import os
 from pathlib import Path
 import re
+import skimage.io as io
 
 
 LINE = '------------------------------------------------------------'
@@ -84,3 +88,52 @@ def check_ids_match(x, y, regex=r'\d{6}_\d{6}_\d{1,3}'):
             assert xid == yid
 
 
+# -------------------------
+# Load Output from Training 
+# -------------------------
+
+def get_dataset(train_dir, out_dir=None):
+    # directory for output, if none, assume output is with training data
+    if out_dir is None:
+        out_dir = train_dir
+    # Get output paths and IDs
+    output_paths = sorted(get_paths(out_dir, r'\d{6}_\d{6}_\d{1,3}_output.tif'))
+    ids = get_ids(output_paths)
+    output = _get_regex_images(out_dir, r'\d{6}_\d{6}_\d{1,3}_output.tif', ids)
+    # get training data (images and labels) according to id strings, 
+    #   which correspond to the batch number.
+    labs = _get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_labels.tif', ids)
+    images = _get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_image.tif', ids)
+    images = da.stack([images], axis=1)
+    return images, labs, output
+
+
+def _get_regex_images(data_dir, regex, ids, id_regex=r'\d{6}_\d{6}_\d{1,3}'):
+    id_pattern = re.compile(id_regex)
+    imread = delayed(_imread_squeeze, pure=True)  
+    file_paths = sorted(get_paths(data_dir, regex))
+    correct_paths = []
+    for ID in ids:
+        id_done = False
+        for f in file_paths:
+            n = Path(f).stem
+            id_match = id_pattern.search(n)[0] # assumes there will be one
+            if id_match == ID:
+                correct_paths.append(f)
+                id_done = True
+        m = f'No file match was found for ID: {ID}'
+        assert id_done, m
+    images = [imread(path) for path in correct_paths]  
+    sample = images[0].compute()  
+    arrays = [da.from_delayed(image,           
+                              dtype=sample.dtype,   
+                              shape=sample.shape)
+                                for image in images]
+
+    stack = da.stack(arrays, axis=0)
+    return stack
+
+
+def _imread_squeeze(path):
+    img = io.imread(path)
+    return np.squeeze(img)
