@@ -112,8 +112,11 @@ def train_unet(
     For each ID, a labels and an image file must be found or else an
     assertion error will be raised.
     '''
+    # Device
+    device_name = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = torch.device(device_name)
     # initialise U-net
-    unet = UNet(out_channels=len(channels))
+    unet = UNet(out_channels=len(channels)).to(device, dtype=torch.float32)
     # load weights if applicable 
     weights_are = _load_weights(weights, unet)
     # define the optimiser
@@ -132,9 +135,6 @@ def train_unet(
         no_iter = (epochs * len(xs)) + (epochs * len(v_xs))
     else:
         no_iter = epochs * len(xs)
-    # Device
-    device_name = 'cuda' if torch.cuda.is_available() else 'cpu'
-    device = torch.device(device_name)
     # print the training into and log if applicable 
     bce_weights = _bce_weights(loss) # gets weights if using WeightedBCE
     _print_train_info(loss_function, bce_weights, epochs, lr, 
@@ -222,7 +222,8 @@ def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
                 optimiser, loss, loss_dict,  validate, v_xs, v_ys, 
                 validation_dict, v_loss, update_every, log, suffix, 
                 channels):
-     # loop over training data 
+    # loop over training data 
+    unet = unet.to(device=device, dtype=torch.float32)
     with tqdm(total=no_iter, desc='unet training') as progress:
         for e in range(epochs):
             running_loss = 0.0
@@ -326,7 +327,7 @@ def _save_output(y_hats, ids, out_dir, suffix=''):
         n = ids[i] + suffix +'_output.tif'
         p = os.path.join(out_dir, n)
         with TiffWriter(p) as tiff:
-            tiff.write(y_hats[i].detach().numpy())
+            tiff.write(y_hats[i].detach().cpu().numpy())
 
 
 #def test_unet(unet, image_paths, labels_paths, out_dir):

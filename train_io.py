@@ -261,20 +261,20 @@ def get_centreness(labels, scale=(4, 1, 1), log=False, power=False):
     Unfortunately, skimage doesn't yet have a method for finding the  
     medioid (more dev, *sigh*).
     """
-    t = time()
-    props = regionprops(labels)
-    centroids = [prop['centroid'] for prop in props]
-    centroids = np.stack(centroids)
-    labs = [prop['label'] for prop in props]
-    new = np.zeros(labels.shape)
     scale = np.array(scale)
-    with tqdm(total=len(centroids), desc='Score centreness') as progress:
-        for i, c in enumerate(centroids):
-            mask = labels == labs[i]
-            indices, values = inverse_dist_score(mask, c, scale, log=log, power=power)
-            new[indices] = values
-            progress.update(1)
-    # new = np.where(np.isnan(new), 0., new)
+    def dist_score(mask):
+        output = np.zeros_like(mask, dtype=np.float32)
+        c = np.mean(np.argwhere(mask), axis=0)
+        indices, values = inverse_dist_score(
+                mask, c, scale, log=log, power=power
+                )
+        output[indices] = values
+        return output
+    t = time()
+    props = regionprops(labels, extra_properties=(dist_score,))
+    new = np.zeros(labels.shape, dtype=np.float32)
+    for i, prop in tqdm(enumerate(props), desc='Score centreness'):
+        new[prop.slice] += prop.dist_score
     print('------------------------------------------------------------')
     print(f'Obtained centreness scores in {time() - t} seconds')
     return new
