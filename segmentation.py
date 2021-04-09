@@ -87,7 +87,7 @@ def _get_centroids(cent, gaussian=True):
 if __name__ == '__main__':
     import os
     data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
-    train_dir = os.path.join(data_dir, '210324_training_0')
+    train_dir = os.path.join(data_dir, '210405_095147_EWBCE_1_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl')
     channels = ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log')
     images, labs, output = get_dataset(train_dir)
     o88 = output[88]
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     mask_chan = 8
     seg88, s88 = segment_output_image(o88, aff_chans, cent_chan, mask_chan) #, scale=(4, 1, 1))
     seg88s, s88s = segment_output_image(o88, aff_chans, cent_chan, mask_chan, scale=(4, 1, 1))
-    #seg88c, s88c = segment_output_image(o88, aff_chans, cent_chan, mask_chan, compactness=0.5) #, scale=(4, 1, 1))
+    seg88c, s88c = segment_output_image(o88, aff_chans, cent_chan, mask_chan, compactness=0.5) #, scale=(4, 1, 1))
     i88 = images[88]
     l88 = labs[88]
     import napari 
@@ -115,8 +115,8 @@ if __name__ == '__main__':
                  scale=(4, 1, 1), blending='additive')
     v.add_labels(seg88s, name='anisotropic affinity watershed', 
                  scale=(4, 1, 1), blending='additive')
-    #v.add_labels(seg88c, name='compact affinity watershed', 
-        #         scale=(4, 1, 1), blending='additive')
+    v.add_labels(seg88c, name='compact affinity watershed', 
+                 scale=(4, 1, 1), blending='additive')
     v.add_points(s88, name='seeds', scale=(4, 1, 1), size=1)
     napari.run()
 
