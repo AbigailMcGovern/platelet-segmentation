@@ -1,11 +1,77 @@
 from dask.array.core import Array
-from helpers import get_dataset
+import dask.array as da
+from helpers import get_dataset, get_regex_images
+import napari
 import numpy as np
+import pandas as pd
 from skimage.feature import peak_local_max, blob_dog, blob_log
 from skimage.filters import threshold_otsu
 from skimage import filters
+from skimage.metrics import variation_of_information
 from watershed import watershed
 from time import time
+
+
+# --------------------------------
+# Segment and Score from Directory
+# --------------------------------
+
+def segment_from_directory(
+        directory, 
+        suffix,
+        affinities_channels, 
+        centroids_channel, 
+        thresholding_channel, 
+        scale = (4, 1, 1),
+        w_scale=None, 
+        compactness=0.,
+        display=True
+        #
+    ):
+    images, labs, output, GT = get_dataset(directory, GT=True)
+    segmentations = []
+    scores = {'GT | Output' : [], 'Output | GT' : []}
+    for i in range(output.shape[0]):
+        gt = GT[i]
+        seg = segment_output_image(
+                output[i], 
+                affinities_channels, 
+                centroids_channel, 
+                thresholding_channel, 
+                scale=w_scale, 
+                compactness=0.)
+        vi = variation_of_information(gt, seg)
+        scores['GT | Output'].append(vi[0])
+        scores['Output | GT'].append(vi[1])
+        seg = da.from_array(seg)
+        segmentations.append(seg)
+    segmentations = da.stack(segmentations)
+    # Save the VI data
+    scores = pd.DataFrame(scores)
+    s_path = os.path.join(directory, suffix + '_VI.csv')
+    scores.to_csv(s_path)
+    print(f'Conditional entropy H(GT|Output): {scores['GT | Output'].mean()}')
+    print(f'Conditional entropy H(Output|GT): {scores['Output | GT'].mean()}')
+    if display:
+        # Now Display
+        z_affs = output[affinities_channels[0]]
+        y_affs = output[affinities_channels[1]]
+        x_affs = output[affinities_channels[2]]
+        v_scale = [1] * len(images.shape)
+        v_scale[:-3] = scale
+        v = napari.Viewer()
+        v.add_image(images, name='Input images', blending='additive', visible=True, scale=v_scale)
+        v.add_image(z_affs, name='z affinities', blending='additive', visible=False, scale=v_scale, 
+                    colormap='bop purple')
+        v.add_image(y_affs, name='y affinities', blending='additive', visible=False, scale=v_scale, 
+                    colormap='bop orange')
+        v.add_image(x_affs, name='x affinities', blending='additive', visible=False, scale=v_scale, 
+                    colormap='bop blue')
+        v.add_labels(GT, name='Ground truth', blending='additive', visible=False, scale=v_scale)
+        v.add_labels(segmentations, name='Segmentations', blending='additive', visible=False, 
+                     scale=v_scale)
+        napari.run()
+
 
 # --------------------
 # Segment U-net Output
@@ -82,6 +148,7 @@ def _get_centroids(cent, gaussian=True):
     centroids = peak_local_max(cent, threshold_abs=.04) #* c_scale
     #centroids = blob_log(cent, min_sigma=min_sigma, max_sigma=max_sigma, threshold=threshold)
     return centroids
+
 
 
 if __name__ == '__main__':
