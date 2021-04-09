@@ -274,7 +274,7 @@ def get_centreness(labels, scale=(4, 1, 1), log=False, power=False):
     props = regionprops(labels, extra_properties=(dist_score,))
     new = np.zeros(labels.shape, dtype=np.float32)
     for i, prop in tqdm(enumerate(props), desc='Score centreness'):
-        new[prop.slice] = prop.dist_score
+        new[prop.slice] += prop.dist_score
     print('------------------------------------------------------------')
     print(f'Obtained centreness scores in {time() - t} seconds')
     return new
