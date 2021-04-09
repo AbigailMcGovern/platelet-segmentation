@@ -148,10 +148,9 @@ def weighted_BCE_loss(
 class SegmentationLoss(nn.Module):
 
     '''
-    Here's the thing... this is super difficult because all of the operations need
-    to be done in pytorch. This includes segmentation, a lot of which is based on
-    scikitimage code. In this case, I think that there would be a lot of work required to 
-    addapt it to use tensors. Table this for now and come back to it
+    Here's the thing... this is super difficult because it can't be used to train a network
+    with backprop (i.e., segmentation process isn't differentiable). Would require another
+    means of training weights.
     '''
     def __init__(self, GT_dir, ids, seg_func, seg_kwargs):
         super(SegmentationLoss, self).__init__()
