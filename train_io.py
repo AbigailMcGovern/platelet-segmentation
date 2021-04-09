@@ -1,3 +1,4 @@
+from augment import augment_images
 from datetime import datetime
 from helpers import get_files, log_dir_or_None, write_log, LINE
 import numpy as np
@@ -154,21 +155,24 @@ def get_random_chunks(
         s_ = [slice(None, None),] # 
         for j in range(len(shape)):
             s_.append(slice(dim_randints[j], dim_randints[j] + shape[j]))
+        s_ = tuple(s_)
         y = a[s_]
         if y.sum() > min_affinity * len(channels): # if there are a sufficient number of boarder voxels
-            # add the affinities and image chunk to the training data 
-            y = torch.from_numpy(y)
-            ys.append(y)
             # Get the network input: image
             s_ = [slice(dim_randints[j], dim_randints[j] + shape[j]) for j in range(len(shape))]
             s_ = tuple(s_)
             x = im[s_]
             x = normalise_data(x)
-            x = torch.from_numpy(x)
-            xs.append(x)
             # get the GT labels so that later quatitative comparison can be made with final
             #   segmentation  
-            lab = l[s_]
+            lab = l[s_] # that's right, be confused by my variable names!!
+            # data augmentation for better generalisation
+            x, y, lab = augment_images(x, y, lab) 
+            # add the affinities and image chunk to the training data 
+            y = torch.from_numpy(y.copy())
+            ys.append(y)
+            x = torch.from_numpy(x.copy())
+            xs.append(x)
             labs.append(lab)
             # another successful addition, job well done you crazy mofo
             i += 1
@@ -393,7 +397,6 @@ def save_random_chunks(xs, ys, labs, out_dir):
     '''
     Save the random chunks as they are sampled
     '''
-    print('out dir: ', out_dir)
     os.makedirs(out_dir, exist_ok=True)
     assert len(xs) == len(ys)
     ids = []

@@ -1,4 +1,5 @@
-from custom_loss import WeightedBCELoss, DiceLoss, channel_losses_to_dict
+from custom_loss import WeightedBCELoss, DiceLoss, EpochwiseWeightedBCELoss, \
+    channel_losses_to_dict
 from datetime import datetime
 import dask.array as da
 from helpers import LINE, write_log
@@ -130,8 +131,10 @@ def train_unet(
         v_loss = _get_loss_function(loss_function, chan_weights)
         validation_dict = {'epoch' : [], 
                            'validation_loss' : [], 
-                           'data_id' : []}
-        no_iter = (epochs * len(xs)) + (epochs * len(v_xs))
+                           'data_id' : [], 
+                           'batch_id': []
+                           }
+        no_iter = (epochs * len(xs)) + ((epochs + 1) * len(v_xs))
     else:
         no_iter = epochs * len(xs)
     # Device
@@ -148,7 +151,7 @@ def train_unet(
                                    v_loss, update_every, log, suffix, channels)
     _save_final_results(unet, out_dir, suffix, y_hats, ids, validate, 
                         loss_dict, v_y_hats, v_ids, validation_dict)
-    _plots(out_dir, suffix, loss_function, validate)
+    #_plots(out_dir, suffix, loss_function, validate) # 2 leaked semaphore objects... pytorch x mpl??
     return unet
 
 
@@ -158,8 +161,8 @@ def _plots(out_dir, suffix, loss_function, validate):
     v_path = None
     if validate:
         vl_path = os.path.join(out_dir, 'validation-loss_' + suffix + '.csv')
-    save_loss_plot(l_path, loss_function, v_path=v_path)
-    save_channel_loss_plot(l_path)
+    save_loss_plot(l_path, loss_function, v_path=vl_path, show=False)
+    save_channel_loss_plot(l_path, show=False)
 
 
 
@@ -173,6 +176,8 @@ def _get_loss_function(loss_function, chan_weights):
         loss = WeightedBCELoss(chan_weights=chan_weights)
     #elif loss_function == 'BCECentrenessPenalty':
        # loss = BCELossWithCentrenessPenalty()
+    elif loss_function == 'EpochWeightedBCE':
+        loss = EpochwiseWeightedBCELoss(weights_list=chan_weights)
     else:
         m = 'Valid loss options are BCELoss, WeightedBCE, and DiceLoss'
         raise ValueError(m)
@@ -235,9 +240,19 @@ def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
                 optimiser, loss, loss_dict,  validate, v_xs, v_ys, 
                 v_ids, validation_dict, v_loss, update_every, log, 
                 suffix, channels):
-     # loop over training data 
+    # loop over training data 
+    v_y_hats = None
     with tqdm(total=no_iter, desc='unet training') as progress:
         for e in range(epochs):
+            _set_epoch_if_epoch_weighted(loss, e)
+            if validate and e == 0:
+                _set_epoch_if_epoch_weighted(v_loss, e, verbose=False)
+                if e == 0:
+                    # first validation at the start of the first epoch
+                    v_y_hats = _validate(v_xs, v_ys, v_ids, 
+                                         device, unet, v_loss, 
+                                         progress, log, out_dir, 
+                                         validation_dict, e, 0)
             running_loss = 0.0
             y_hats = []
             for i in range(len(xs)):
@@ -254,13 +269,22 @@ def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
                         write_log(s, out_dir)
                     running_loss = 0.0
             if validate:
-                v_y_hats = _validate(v_xs, v_ys, v_ids, device, unet, v_loss, 
-                                     progress, log, out_dir, validation_dict, e)
-            else:
-                v_y_hats = None
+                # validation at the end of the epoch
+                batch_no = ((e + 1) * len(xs))
+                v_y_hats = _validate(v_xs, v_ys, v_ids, 
+                                     device, unet, v_loss, 
+                                     progress, log, out_dir, 
+                                     validation_dict, e, batch_no)
             _save_checkpoint(unet.state_dict(), out_dir, 
                              f'{suffix}_epoch-{e}')  
     return y_hats, v_y_hats
+
+
+def _set_epoch_if_epoch_weighted(loss, e, verbose=True):
+    if isinstance(loss, EpochwiseWeightedBCELoss):
+        loss.current_epoch = e
+        if verbose:
+            print(f'Channel weights set to {loss.current_weights.data} for epoch {e} ')
 
 
 def _train_step(i, xs, ys, ids, device, unet, optimiser, 
@@ -272,7 +296,7 @@ def _train_step(i, xs, ys, ids, device, unet, optimiser,
     l = loss(y_hat, y)
     l.backward()
     optimiser.step()
-    loss_dict['epoch'].append(e)
+    loss_dict['epoch'].append(e) 
     loss_dict['batch_num'].append(i)
     loss_dict['loss'].append(l.item())
     loss_dict['data_id'].append(ids[i])
@@ -281,7 +305,7 @@ def _train_step(i, xs, ys, ids, device, unet, optimiser,
 
 
 def _validate(v_xs, v_ys, v_ids, device, unet, v_loss, progress, 
-             log, out_dir, validation_dict, e):
+             log, out_dir, validation_dict, e, batch_no):
     validation_loss = 0.0
     with torch.no_grad():
         v_y_hats = []
@@ -292,8 +316,9 @@ def _validate(v_xs, v_ys, v_ids, device, unet, v_loss, progress,
             vl = v_loss(v_y_hat, v_y)
             validation_loss += vl.item()
             validation_dict['epoch'].append(e)
-            validation_dict['validation_loss'].append(score)
+            validation_dict['validation_loss'].append(vl.item())
             validation_dict['data_id'].append(v_ids[i])
+            validation_dict['batch_id'].append(batch_no)
             progress.update(1)
         score = validation_loss / len(v_xs)
         s = f'Epoch {e} - validation loss: {score}'
