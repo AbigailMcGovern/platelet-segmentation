@@ -1,7 +1,9 @@
+from augment import augment_images
 from datetime import datetime
 from helpers import get_files, log_dir_or_None, write_log, LINE
 import numpy as np
 import os
+import pandas as pd
 from pathlib import Path
 import re
 import skimage.filters as filters
@@ -144,6 +146,9 @@ def get_random_chunks(
     ys = []
     labs = []
     i = 0
+    df = {'z_start' : [],
+          'y_start' : [],
+          'x_start' : []}
     while i < n:
         dim_randints = []
         for j, dim in enumerate(shape):
@@ -154,25 +159,30 @@ def get_random_chunks(
         s_ = [slice(None, None),] # 
         for j in range(len(shape)):
             s_.append(slice(dim_randints[j], dim_randints[j] + shape[j]))
+        s_ = tuple(s_)
         y = a[s_]
         if y.sum() > min_affinity * len(channels): # if there are a sufficient number of boarder voxels
-            # add the affinities and image chunk to the training data 
-            y = torch.from_numpy(y)
-            ys.append(y)
+            # add coords to output df
+            for j in range(len(shape)):
+                _add_to_dataframe(j, dim_randints[j], df)
             # Get the network input: image
             s_ = [slice(dim_randints[j], dim_randints[j] + shape[j]) for j in range(len(shape))]
             s_ = tuple(s_)
             x = im[s_]
             x = normalise_data(x)
-            x = torch.from_numpy(x)
-            xs.append(x)
             # get the GT labels so that later quatitative comparison can be made with final
             #   segmentation  
-            lab = l[s_]
+            lab = l[s_] # that's right, be confused by my variable names!!
+            # data augmentation for better generalisation
+            x, y, lab = augment_images(x, y, lab) 
+            # add the affinities and image chunk to the training data 
+            y = torch.from_numpy(y.copy())
+            ys.append(y)
+            x = torch.from_numpy(x.copy())
+            xs.append(x)
             labs.append(lab)
             # another successful addition, job well done you crazy mofo
             i += 1
-
     print(LINE)
     s = f'Obtained {n} {shape} chunks of training data'
     print(s)
@@ -182,7 +192,21 @@ def get_random_chunks(
     log_dir = log_dir_or_None(log, out_dir)
     print_labels_info(channels, out_dir=log_dir)
     ids = save_random_chunks(xs, ys, labs, out_dir)
+    now = datetime.now()
+    d = now.strftime("%y%m%d_%H%M%S")
+    df['data_ids'] = ids
+    df = pd.DataFrame(df)
+    df.to_csv(os.path.join(out_dir, 'start_coords' + d + '.csv'))
     return xs, ys, ids
+
+
+def _add_to_dataframe(dim, start, df):
+    if dim == 0:
+        df['z_start'].append(start)
+    if dim == 1:
+        df['y_start'].append(start)
+    if dim == 2:
+        df['x_start'].append(start)
 
 
 # --------------------------
@@ -275,6 +299,7 @@ def get_centreness(labels, scale=(4, 1, 1), log=False, power=False):
     new = np.zeros(labels.shape, dtype=np.float32)
     for i, prop in tqdm(enumerate(props), desc='Score centreness'):
         new[prop.slice] += prop.dist_score
+    new = np.nan_to_num(new)
     print('------------------------------------------------------------')
     print(f'Obtained centreness scores in {time() - t} seconds')
     return new

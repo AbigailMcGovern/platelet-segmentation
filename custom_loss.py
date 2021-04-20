@@ -1,7 +1,8 @@
-import torch
-import torch.nn as nn
+from helpers import get_regex_images
 import numpy as np
 from skimage.morphology._util import _offsets_to_raveled_neighbors
+import torch
+import torch.nn as nn
 
 
 def channel_losses_to_dict(inputs, targets, channels, loss_dict):
@@ -50,32 +51,181 @@ class DiceLoss(nn.Module):
 
 
 class WeightedBCELoss(nn.Module):
-    def __init__(self, chan_weights=(1., 2., 2.), reduction='mean', final_reduction='mean'):
+    def __init__(
+            self, 
+            chan_weights, 
+            device,
+            reduction='mean', 
+            final_reduction='mean', 
+            channel_dim=1,
+        ):
         super(WeightedBCELoss, self).__init__()
         self.bce = nn.BCELoss(reduction='none')
+        self.chan_weights = torch.tensor(list(chan_weights)).to(device)
         self.reduction = reduction
         self.final_reduction = final_reduction
-        self.chan_weights = torch.tensor(list(chan_weights))
+        self.channel_dim = channel_dim
+        self.device = device
 
 
-    def forward(self, inputs, targets, channel_dim=1):
-        inputs, targets = flatten_channels(inputs, targets, channel_dim)
-        unreduced = self.bce(inputs, targets)
-        if self.reduction == 'mean':
-            channel_losses = unreduced.mean(-1) * self.chan_weights
-        elif self.reduction == 'sum':
-            channel_losses = unreduced.sum(-1) * self.chan_weights
-        else:
-            raise ValueError('reduction param must be mean or sum')
-        if self.final_reduction == 'mean':
-            loss = channel_losses.mean()
-        elif self.final_reduction == 'sum':
-            loss = channel_losses.sum()
-        else:
-            raise ValueError('final_reduction must be mean or sum')
+    def forward(self, inputs, targets):
+        loss = weighted_BCE_loss(
+            inputs, 
+            targets, 
+            self.chan_weights, 
+            self.device,
+            self.channel_dim, 
+            self.reduction, 
+            self.final_reduction
+        )
         return loss
 
 
+
+class EpochwiseWeightedBCELoss(nn.Module):
+    def __init__(
+            self, 
+            weights_list, 
+            device, 
+            reduction='mean', 
+            final_reduction='mean', 
+            channel_dim=1,
+        ):
+        super(EpochwiseWeightedBCELoss, self).__init__()
+        self._weights = torch.tensor(weights_list, requires_grad=False).to(device)
+        self._reduction = reduction
+        self._final_reduction = final_reduction
+        self._channel_dim = channel_dim
+        self._current_epoch = None
+        self.current_weights = None
+        self.device = device 
+
+    
+    @property
+    def current_epoch(self):
+        return self._current_epoch
+    
+
+    @current_epoch.setter
+    def current_epoch(self, e):
+        self._current_epoch = e
+        self.current_weights = self._weights[e]
+
+
+    def forward(self, inputs, targets):
+        loss = weighted_BCE_loss(
+            inputs, 
+            targets, 
+            self.current_weights, 
+            self.device,
+            self._channel_dim, 
+            self._reduction, 
+            self._final_reduction
+        )
+        return loss
+
+
+def weighted_BCE_loss(
+        inputs, 
+        targets, 
+        chan_weights, 
+        device,
+        channel_dim=1, 
+        reduction='mean', 
+        final_reduction='mean'
+    ):
+    bce = nn.BCELoss(reduction='none').to(device)
+    inputs, targets = flatten_channels(inputs, targets, channel_dim)
+    unreduced = bce(inputs, targets)
+    if reduction == 'mean':
+        channel_losses = unreduced.mean(-1) * chan_weights
+    elif reduction == 'sum':
+        channel_losses = unreduced.sum(-1) * chan_weights
+    else:
+        raise ValueError('reduction param must be mean or sum')
+    if final_reduction == 'mean':
+        loss = channel_losses.mean()
+    elif final_reduction == 'sum':
+        loss = channel_losses.sum()
+    else:
+        raise ValueError('final_reduction must be mean or sum')
+    return loss
+
+
+class SegmentationLoss(nn.Module):
+
+    '''
+    Here's the thing... this is super difficult because it can't be used to train a network
+    with backprop (i.e., segmentation process isn't differentiable). Would require another
+    means of training weights.
+    '''
+    def __init__(self, GT_dir, ids, seg_func, seg_kwargs):
+        super(SegmentationLoss, self).__init__()
+        self._func = seg_func 
+        self._kwargs = seg_kwargs
+        self._batch_no = None
+        # get the GTs in correct order
+        self._GT_stack = get_regex_images(GT_dir, r'\d{6}_\d{6}_\d{1,3}_GT.tif', ids)
+
+
+    def forward(self, inputs, targets):
+        pass
+
+
+    def segment(self, data):
+        return self._func(data, **self._kwargs)
+
+
+    def get_GT(self):
+        array = self._GT_stack[self._batch_no].compute()
+        return array
+
+
+    @property
+    def batch_no(self):
+        return self._batch_no
+
+
+    @batch_no.setter
+    def batch_no(self, i):
+        self._batch_no = i
+
+
+# ----------------
+# Helper Functions 
+# ----------------
+
+def flatten_channels(inputs, targets, channel_dim):
+    '''
+    Helper function to flatten inputs and targets for each channel
+
+    E.g., (1, 3, 10, 256, 256) --> (3, 655360)
+
+    Parameters
+    ----------
+    inputs: torch.Tensor
+        U-net output
+    targets: torch.Tensor
+        Target labels
+    channel_dim: int
+        Which dim represents output channels? 
+    '''
+    order = [channel_dim, ]
+    for i in range(len(inputs.shape)):
+        if i != channel_dim:
+            order.append(i)
+    inputs = inputs.permute(*order)
+    inputs = torch.flatten(inputs, start_dim=1)
+    targets = targets.permute(*order)
+    targets = torch.flatten(targets, start_dim=1)
+    return inputs, targets
+
+
+
+# -------------------
+# Probably Not Useful
+# -------------------
+ 
 class BCELossWithCentrenessPenalty(nn.Module):
 
     def __init__(
@@ -232,29 +382,3 @@ class CentroidLoss(nn.Module):
         distances = np.array(distances)
         return distances / distances.max()
 
-
-# helper function 
-def flatten_channels(inputs, targets, channel_dim):
-    '''
-    Helper function to flatten inputs and targets for each channel
-
-    E.g., (1, 3, 10, 256, 256) --> (3, 655360)
-
-    Parameters
-    ----------
-    inputs: torch.Tensor
-        U-net output
-    targets: torch.Tensor
-        Target labels
-    channel_dim: int
-        Which dim represents output channels? 
-    '''
-    order = [channel_dim, ]
-    for i in range(len(inputs.shape)):
-        if i != channel_dim:
-            order.append(i)
-    inputs = inputs.permute(*order)
-    inputs = torch.flatten(inputs, start_dim=1)
-    targets = targets.permute(*order)
-    targets = torch.flatten(targets, start_dim=1)
-    return inputs, targets

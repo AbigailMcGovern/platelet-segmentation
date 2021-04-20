@@ -5,17 +5,21 @@ import pandas as pd
 from pathlib import Path
 
 
-def save_loss_plot(path, loss_function, v_path=None):
+def save_loss_plot(path, loss_function, v_path=None, show=True):
     df = pd.read_csv(path)
+    if v_path is not None:
+        vdf = pd.read_csv(v_path)
+    else:
+        vdf = None
     p = Path(path)
     n = p.stem
     d = p.parents[0]
     out_path = os.path.join(d, n + '_loss.png')
-    fig, ax = plot_loss(df, vdf=None, x_lab='Iteration', y_lab=loss_function, save=out_path)
+    fig, ax = plot_loss(df, vdf=vdf, x_lab='Iteration', y_lab=loss_function, save=out_path, show=show)
 
 
 
-def plot_loss(df, vdf=None, x_lab='Iteration', y_lab='BCE Loss', save=None):
+def plot_loss(df, vdf=None, x_lab='Iteration', y_lab='BCE Loss', save=None, show=True):
     x = df['Unnamed: 0'].values
     y = df['loss'].values
     epochs = len(df['epoch'].unique())
@@ -28,35 +32,44 @@ def plot_loss(df, vdf=None, x_lab='Iteration', y_lab='BCE Loss', save=None):
     ax.plot(x, y, linewidth=2)
     ax.scatter(epoch_end_x, epoch_end_y)
     title = 'Training loss'
-    if v_path is not None:
-        v_df = pd.read_csv(v_path)
-        vx = epoch_end_x
-        vy = v_df['validation_loss'].values
+    if vdf is not None:
+        if len(vdf) > epochs:
+            vy = vdf.groupby('batch_id').mean()['validation_loss'].values
+            vx = vdf['batch_id'].unique()
+        else:
+            vy = vdf['validation_loss'].values
+            vx = epoch_end_x
         title = title + ' with validation loss'
         leg.append('validation loss')
-        ax.plot(vx, vy, linewidth=2, marker='o')
+        if len(vdf) > epochs:
+            #vy_err = v_df.groupby('batch_id').sem()['validation_loss'].values
+            #ax.errorbar(vx, vy, vy_err, marker='.')
+            ax.plot(vx, vy, linewidth=2, marker='o')
+        else:
+            ax.plot(vx, vy, linewidth=2, marker='o')
     ax.set(xlabel=x_lab, ylabel=y_lab)
     ax.set_title(title)
     ax.legend(leg)
     fig.set_size_inches(13, 9)
     if save is not None:
         plt.savefig(save, dpi=300)
-    plt.show()
+    if show:
+        plt.show()
     return fig, ax
 
 
 
-def save_channel_loss_plot(path):
+def save_channel_loss_plot(path, show=True):
     df = pd.read_csv(path)
     p = Path(path)
     n = p.stem
     d = p.parents[0]
     out_path = os.path.join(d, n + '_channel-loss.png')
-    fig, ax = plot_channel_losses(df, save=out_path)
+    fig, ax = plot_channel_losses(df, save=out_path, show=show)
 
 
 
-def plot_channel_losses(df, x_lab='Iteration', y_lab='BCE Loss', save=None):
+def plot_channel_losses(df, x_lab='Iteration', y_lab='BCE Loss', save=None, show=True):
     cols = list(df.columns)
     x = df['Unnamed: 0'].values
     non_channel_cols = ['Unnamed: 0', 'epoch', 'batch_num', 'loss', 'data_id']
@@ -94,7 +107,8 @@ def plot_channel_losses(df, x_lab='Iteration', y_lab='BCE Loss', save=None):
     fig.set_size_inches(13, 9)
     if save is not None:
         plt.savefig(save, dpi=300)
-    plt.show()
+    if show:
+        plt.show()
     return fig, axs
 
 
@@ -109,11 +123,14 @@ def _get_linestyle(lis):
 
 
 if __name__ == '__main__':
-    name = 'loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl.csv'
-    dir_ = '/Users/amcg0011/Data/pia-tracking/cang_training/210324_training_0'
+    #name = 'loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl.csv'
+    name = 'loss_210401_150158_z-1_y-1_x-1__wBCE2-1-1.csv'
+    #dir_ = '/Users/amcg0011/Data/pia-tracking/cang_training/210331_training_0'
+    dir_ = '/Users/amcg0011/Data/pia-tracking/cang_training/210401_150158_z-1_y-1_x-1__wBCE2-1-1'
     path = os.path.join(dir_, name)
     save_channel_loss_plot(path)
-    v_name = 'validation-loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl.csv'
+    #v_name = 'validation-loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl.csv'
+    v_name = 'validation-loss_210401_150158_z-1_y-1_x-1__wBCE2-1-1.csv'
     v_path = os.path.join(dir_, v_name)
-    loss_function = 'BCE Loss'
+    loss_function = 'Weighted BCE Loss (2, 1, 1)'
     save_loss_plot(path, loss_function, v_path)
