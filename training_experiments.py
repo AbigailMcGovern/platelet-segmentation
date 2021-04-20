@@ -186,7 +186,7 @@ if __name__ == '__main__':
         })
     }
     # Directory for training data and network output 
-    data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
+    data_dir = '/home/abigail/data/platelet-segmentation-training'
     # Path for original image volumes for which GT was generated
     image_paths = [os.path.join(data_dir, '191113_IVMTR26_I3_E3_t58_cang_training_image.zarr')] 
     # Path for GT labels volumes

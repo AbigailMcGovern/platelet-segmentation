@@ -53,17 +53,19 @@ class DiceLoss(nn.Module):
 class WeightedBCELoss(nn.Module):
     def __init__(
             self, 
-            chan_weights=(1., 2., 2.), 
+            chan_weights, 
+            device,
             reduction='mean', 
             final_reduction='mean', 
             channel_dim=1,
         ):
         super(WeightedBCELoss, self).__init__()
         self.bce = nn.BCELoss(reduction='none')
-        self.chan_weights = torch.tensor(list(chan_weights))
+        self.chan_weights = torch.tensor(list(chan_weights)).to(device)
         self.reduction = reduction
         self.final_reduction = final_reduction
         self.channel_dim = channel_dim
+        self.device = device
 
 
     def forward(self, inputs, targets):
@@ -71,6 +73,7 @@ class WeightedBCELoss(nn.Module):
             inputs, 
             targets, 
             self.chan_weights, 
+            self.device,
             self.channel_dim, 
             self.reduction, 
             self.final_reduction
@@ -82,18 +85,20 @@ class WeightedBCELoss(nn.Module):
 class EpochwiseWeightedBCELoss(nn.Module):
     def __init__(
             self, 
-            weights_list,  
+            weights_list, 
+            device, 
             reduction='mean', 
             final_reduction='mean', 
             channel_dim=1,
         ):
         super(EpochwiseWeightedBCELoss, self).__init__()
-        self._weights = torch.tensor(weights_list, requires_grad=False)
+        self._weights = torch.tensor(weights_list, requires_grad=False).to(device)
         self._reduction = reduction
         self._final_reduction = final_reduction
         self._channel_dim = channel_dim
         self._current_epoch = None
         self.current_weights = None
+        self.device = device 
 
     
     @property
@@ -112,6 +117,7 @@ class EpochwiseWeightedBCELoss(nn.Module):
             inputs, 
             targets, 
             self.current_weights, 
+            self.device,
             self._channel_dim, 
             self._reduction, 
             self._final_reduction
@@ -123,11 +129,12 @@ def weighted_BCE_loss(
         inputs, 
         targets, 
         chan_weights, 
+        device,
         channel_dim=1, 
         reduction='mean', 
         final_reduction='mean'
     ):
-    bce = nn.BCELoss(reduction='none')
+    bce = nn.BCELoss(reduction='none').to(device)
     inputs, targets = flatten_channels(inputs, targets, channel_dim)
     unreduced = bce(inputs, targets)
     if reduction == 'mean':

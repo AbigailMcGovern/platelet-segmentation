@@ -128,14 +128,14 @@ def train_unet(
     # define the optimiser
     optimiser = optim.Adam(unet.parameters(), lr=lr)
     # define the loss function
-    loss = _get_loss_function(loss_function, chan_weights)
+    loss = _get_loss_function(loss_function, chan_weights, device)
     # get the dictionary that will be converted to a csv of losses
     #   contains columns for each channel, as we record channel-wise
     #   BCE loss in addition to the loss used for backprop
     channels = _index_channels_if_none(channels, xs) 
     loss_dict = _get_loss_dict(channels)
     if validate:
-        v_loss = _get_loss_function(loss_function, chan_weights)
+        v_loss = _get_loss_function(loss_function, chan_weights, device)
         validation_dict = {'epoch' : [], 
                            'validation_loss' : [], 
                            'data_id' : [], 
@@ -170,18 +170,18 @@ def _plots(out_dir, suffix, loss_function, validate):
 
 
 
-def _get_loss_function(loss_function, chan_weights):
+def _get_loss_function(loss_function, chan_weights, device):
     # define the loss function
     if loss_function == 'BCELoss':
         loss = nn.BCELoss()
     elif loss_function == 'DiceLoss':
         loss = DiceLoss()
     elif loss_function == 'WeightedBCE':
-        loss = WeightedBCELoss(chan_weights=chan_weights)
+        loss = WeightedBCELoss(chan_weights=chan_weights, device=device)
     #elif loss_function == 'BCECentrenessPenalty':
        # loss = BCELossWithCentrenessPenalty()
     elif loss_function == 'EpochWeightedBCE':
-        loss = EpochwiseWeightedBCELoss(weights_list=chan_weights)
+        loss = EpochwiseWeightedBCELoss(weights_list=chan_weights, device=device)
     else:
         m = 'Valid loss options are BCELoss, WeightedBCE, and DiceLoss'
         raise ValueError(m)
