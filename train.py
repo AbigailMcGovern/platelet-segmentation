@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.optim as optim
 from train_io import get_train_data, load_train_data
 from tqdm import tqdm
-from unet import UNet
+from unet import UNet, ForkedUNet
 
 
 # DICE seems to be more common but BCE Loss is also used for 
@@ -44,6 +44,7 @@ def train_unet(
                chan_weights=(1., 2., 2.), # for weighted BCE
                weights=None,
                update_every=20, 
+               fork_channels=None,
                **kwargs
                ):
     '''
@@ -115,7 +116,11 @@ def train_unet(
     assertion error will be raised.
     '''
     # initialise U-net
-    unet = UNet(out_channels=len(channels))
+    print('fc: ', fork_channels)
+    if fork_channels is None:
+        unet = UNet(out_channels=len(channels))
+    else:
+        unet = UNet(out_channels=fork_channels)
     # load weights if applicable 
     weights_are = _load_weights(weights, unet)
     # define the optimiser
@@ -535,6 +540,7 @@ def train_unet_get_labels(
                           chan_weights=(1., 2., 2.), # for weighted BCE
                           weights=None,
                           update_every=20,
+                          fork_channels=None,
                           **kwargs
                           ):
     '''
@@ -640,7 +646,8 @@ def train_unet_get_labels(
                       loss_function=loss_function, 
                       chan_weights=chan_weights, # for weighted BCE
                       weights=weights,
-                      update_every=update_every
+                      update_every=update_every, 
+                      fork_channels=fork_channels
                       )
     return unet
 

@@ -106,8 +106,8 @@ def get_dataset(train_dir, out_dir=None, GT=False):
     images = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_image.tif', ids)
     images = da.stack([images], axis=1)
     if GT:
-        images = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_GT.tif', ids)
-        return images, labs, output, GT
+        ground_truth = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_GT.tif', ids)
+        return images, labs, output, ground_truth
     else:
         return images, labs, output
 
