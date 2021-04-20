@@ -4,9 +4,11 @@ from helpers import get_dataset, get_regex_images
 import napari
 import numpy as np
 import pandas as pd
+from scipy.ndimage import label
 from skimage.feature import peak_local_max, blob_dog, blob_log
 from skimage.filters import threshold_otsu
 from skimage import filters
+from skimage.measure import regionprops
 from skimage.metrics import variation_of_information
 from watershed import watershed
 from time import time
@@ -28,12 +30,15 @@ def segment_from_directory(
         display=True
         #
     ):
-    images, labs, output, GT = get_dataset(directory, GT=True)
+    images, _, output, GT = get_dataset(directory, GT=True)
+    images = da.squeeze(images)
+    print(output.shape)
     segmentations = []
+    masks = []
     scores = {'GT | Output' : [], 'Output | GT' : []}
     for i in range(output.shape[0]):
-        gt = GT[i]
-        seg = segment_output_image(
+        gt = GT[i].compute()
+        seg, _, mask = segment_output_image(
                 output[i], 
                 affinities_channels, 
                 centroids_channel, 
@@ -45,30 +50,40 @@ def segment_from_directory(
         scores['Output | GT'].append(vi[1])
         seg = da.from_array(seg)
         segmentations.append(seg)
+        masks.append(mask)
     segmentations = da.stack(segmentations)
+    masks = da.stack(masks)
     # Save the VI data
     scores = pd.DataFrame(scores)
     s_path = os.path.join(directory, suffix + '_VI.csv')
     scores.to_csv(s_path)
-    print(f'Conditional entropy H(GT|Output): {scores['GT | Output'].mean()}')
-    print(f'Conditional entropy H(Output|GT): {scores['Output | GT'].mean()}')
+    gt_o = scores['GT | Output'].mean()
+    o_gt = scores['Output | GT'].mean()
+    print(f'Conditional entropy H(GT|Output): {gt_o}')
+    print(f'Conditional entropy H(Output|GT): {o_gt}')
     if display:
         # Now Display
-        z_affs = output[affinities_channels[0]]
-        y_affs = output[affinities_channels[1]]
-        x_affs = output[affinities_channels[2]]
+        z_affs = output[:, affinities_channels[0], ...]
+        y_affs = output[:, affinities_channels[1], ...]
+        x_affs = output[:, affinities_channels[2], ...]
+        c = output[:, thresholding_channel, ...]
+        cl = output[:, centroids_channel, ...]
         v_scale = [1] * len(images.shape)
-        v_scale[:-3] = scale
+        v_scale[-3:] = scale
+        print(images.shape, v_scale, z_affs.shape, masks.shape)
         v = napari.Viewer()
         v.add_image(images, name='Input images', blending='additive', visible=True, scale=v_scale)
+        v.add_image(c, name='Thresholding channel', blending='additive', visible=False, scale=v_scale)
+        v.add_image(cl, name='Centroids channel', blending='additive', visible=False, scale=v_scale)
         v.add_image(z_affs, name='z affinities', blending='additive', visible=False, scale=v_scale, 
                     colormap='bop purple')
         v.add_image(y_affs, name='y affinities', blending='additive', visible=False, scale=v_scale, 
                     colormap='bop orange')
         v.add_image(x_affs, name='x affinities', blending='additive', visible=False, scale=v_scale, 
                     colormap='bop blue')
+        v.add_labels(masks, name='Masks', blending='additive', visible=False, scale=v_scale)
         v.add_labels(GT, name='Ground truth', blending='additive', visible=False, scale=v_scale)
-        v.add_labels(segmentations, name='Segmentations', blending='additive', visible=False, 
+        v.add_labels(segmentations, name='Segmentations', blending='additive', visible=True, 
                      scale=v_scale)
         napari.run()
 
@@ -124,14 +139,16 @@ def segment_output_image(
     # find the mask for use with watershed
     mask = _get_mask(masking_img)
     mask = np.pad(mask, 1, constant_values=0) # edge voxels must be 0
+    mask, centroids = _remove_unwanted_objects(mask, centroids, min_area=10, max_area=10000)
     # affinity-based watershed
     segmentation = watershed(affinties, centroids, mask, 
                              affinities=True, scale=scale, 
                              compactness=compactness)
     segmentation = segmentation[1:-1, 1:-1, 1:-1]
+    segmentation = segmentation.astype(int)
     seeds = centroids - 1
     print(f'Obtained segmentation in {time() - t} seconds')
-    return segmentation, seeds
+    return segmentation, seeds, mask
 
 
 def _get_mask(img, sigma=2):
@@ -150,40 +167,72 @@ def _get_centroids(cent, gaussian=True):
     return centroids
 
 
+def _remove_unwanted_objects(mask, centroids, min_area=0, max_area=10000):
+    labs, _ = label(mask)
+    props = regionprops(labs)
+    new = np.zeros_like(mask)
+    a_s = []
+    for prop in props:
+        a = prop['area']
+        a_s.append(a)
+        if a >= min_area and a < max_area:
+            l = prop['label']
+            new = np.where(labs == l, 1, new)
+    new_cent = []
+    for c in centroids:
+        try:
+            if new[c[-3], c[-2], c[-1]] == 1:
+                new_cent.append(c)
+        except IndexError:
+            pass
+    #print('min: ', np.min(a_s), ' max: ', np.max(a_s))
+    return new, np.array(new_cent)
+
+
 
 if __name__ == '__main__':
     import os
     data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
-    train_dir = os.path.join(data_dir, '210324_training_0')
+    train_dir = os.path.join(data_dir, '210416_161026_EWBCE_2F_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl')
     channels = ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log')
     images, labs, output = get_dataset(train_dir)
-    o88 = output[88]
+    #o88 = output[88]
     aff_chans = (0, 2, 5)
     cent_chan = 9
     mask_chan = 8
-    seg88, s88 = segment_output_image(o88, aff_chans, cent_chan, mask_chan) #, scale=(4, 1, 1))
-    seg88s, s88s = segment_output_image(o88, aff_chans, cent_chan, mask_chan, scale=(4, 1, 1))
+    #seg88, s88 = segment_output_image(o88, aff_chans, cent_chan, mask_chan) #, scale=(4, 1, 1))
+    #seg88s, s88s = segment_output_image(o88, aff_chans, cent_chan, mask_chan, scale=(4, 1, 1))
     #seg88c, s88c = segment_output_image(o88, aff_chans, cent_chan, mask_chan, compactness=0.5) #, scale=(4, 1, 1))
-    i88 = images[88]
-    l88 = labs[88]
-    import napari 
-    v = napari.view_image(i88, name='image', scale=(4, 1, 1), blending='additive')
+    #i88 = images[88]
+    #l88 = labs[88]
+    #v = napari.view_image(i88, name='image', scale=(4, 1, 1), blending='additive')
     #v.add_labels(l88, name='labels', scale=(4, 1, 1), visible=False)
-    v.add_image(o88[aff_chans[0]], name='z affinities', 
-                colormap='bop purple', scale=(4, 1, 1), 
-                visible=False, blending='additive')
-    v.add_image(o88[aff_chans[1]], name='y affinities', 
-                colormap='bop orange', scale=(4, 1, 1), 
-                visible=False, blending='additive')
-    v.add_image(o88[aff_chans[2]], name='x affinities', 
-                colormap='bop blue', scale=(4, 1, 1), 
-                visible=False, blending='additive')
-    v.add_labels(seg88, name='affinity watershed', 
-                 scale=(4, 1, 1), blending='additive')
-    v.add_labels(seg88s, name='anisotropic affinity watershed', 
-                 scale=(4, 1, 1), blending='additive')
+    #v.add_image(o88[aff_chans[0]], name='z affinities', 
+              #  colormap='bop purple', scale=(4, 1, 1), 
+               # visible=False, blending='additive')
+    #v.add_image(o88[aff_chans[1]], name='y affinities', 
+              #  colormap='bop orange', scale=(4, 1, 1), 
+              #  visible=False, blending='additive')
+    #v.add_image(o88[aff_chans[2]], name='x affinities', 
+              #  colormap='bop blue', scale=(4, 1, 1), 
+              #  visible=False, blending='additive')
+    #v.add_labels(seg88, name='affinity watershed', 
+               #  scale=(4, 1, 1), blending='additive')
+    #v.add_labels(seg88s, name='anisotropic affinity watershed', 
+               #  scale=(4, 1, 1), blending='additive')
     #v.add_labels(seg88c, name='compact affinity watershed', 
         #         scale=(4, 1, 1), blending='additive')
-    v.add_points(s88, name='seeds', scale=(4, 1, 1), size=1)
-    napari.run()
+    #v.add_points(s88, name='seeds', scale=(4, 1, 1), size=1)
+    #napari.run()
+
+    segment_from_directory(
+        train_dir, 
+        'EWBCE_2F_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl',
+        aff_chans, 
+        cent_chan, 
+        mask_chan, 
+        scale = (4, 1, 1),
+        w_scale=None, 
+        compactness=0.,
+        display=True)
 
