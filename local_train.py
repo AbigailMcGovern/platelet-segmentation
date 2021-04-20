@@ -1,7 +1,7 @@
-import napari
 import numpy as np
 import os
 import torch
+import napari
 import train
 
 

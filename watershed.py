@@ -154,17 +154,18 @@ def slow_raveled_watershed(image_raveled, marker_coords, offsets, mask,
                 new_elem.value = image_raveled[affinity_index]
             else:
                 new_elem.value = image_raveled[neighbor_index]
+            if anisotropic:
+                dim_weight = dim_weights[i]
+                new_elem.value = new_elem.value * dim_weight
             if compact:
                 # weight values according to distance from source voxel
                 new_elem.value += (compactness *
                                        _euclid_dist(neighbor_index, elem.source,
                                                         strides))
-            if anisotropic:
-                dim_weight = dim_weights[i]
                 # weight the value according to scale 
                 # (may need to introduce a scaling hyperparameter)
-                new_elem.value = new_elem.value * dim_weight
-            output[neighbor_index] = output[elem.index]
+            else:
+                output[neighbor_index] = output[elem.index]
             new_elem.age = age
             new_elem.index = neighbor_index
             new_elem.source = elem.source
