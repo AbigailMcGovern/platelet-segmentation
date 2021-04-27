@@ -1,7 +1,9 @@
+from augment import augment_images
 from datetime import datetime
 from helpers import get_files, log_dir_or_None, write_log, LINE
 import numpy as np
 import os
+import pandas as pd
 from pathlib import Path
 import re
 import skimage.filters as filters
@@ -144,6 +146,9 @@ def get_random_chunks(
     ys = []
     labs = []
     i = 0
+    df = {'z_start' : [],
+          'y_start' : [],
+          'x_start' : []}
     while i < n:
         dim_randints = []
         for j, dim in enumerate(shape):
@@ -154,25 +159,30 @@ def get_random_chunks(
         s_ = [slice(None, None),] # 
         for j in range(len(shape)):
             s_.append(slice(dim_randints[j], dim_randints[j] + shape[j]))
+        s_ = tuple(s_)
         y = a[s_]
         if y.sum() > min_affinity * len(channels): # if there are a sufficient number of boarder voxels
-            # add the affinities and image chunk to the training data 
-            y = torch.from_numpy(y)
-            ys.append(y)
+            # add coords to output df
+            for j in range(len(shape)):
+                _add_to_dataframe(j, dim_randints[j], df)
             # Get the network input: image
             s_ = [slice(dim_randints[j], dim_randints[j] + shape[j]) for j in range(len(shape))]
             s_ = tuple(s_)
             x = im[s_]
             x = normalise_data(x)
-            x = torch.from_numpy(x)
-            xs.append(x)
             # get the GT labels so that later quatitative comparison can be made with final
             #   segmentation  
-            lab = l[s_]
+            lab = l[s_] # that's right, be confused by my variable names!!
+            # data augmentation for better generalisation
+            x, y, lab = augment_images(x, y, lab) 
+            # add the affinities and image chunk to the training data 
+            y = torch.from_numpy(y.copy())
+            ys.append(y)
+            x = torch.from_numpy(x.copy())
+            xs.append(x)
             labs.append(lab)
             # another successful addition, job well done you crazy mofo
             i += 1
-
     print(LINE)
     s = f'Obtained {n} {shape} chunks of training data'
     print(s)
@@ -182,18 +192,38 @@ def get_random_chunks(
     log_dir = log_dir_or_None(log, out_dir)
     print_labels_info(channels, out_dir=log_dir)
     ids = save_random_chunks(xs, ys, labs, out_dir)
+    now = datetime.now()
+    d = now.strftime("%y%m%d_%H%M%S")
+    df['data_ids'] = ids
+    df = pd.DataFrame(df)
+    df.to_csv(os.path.join(out_dir, 'start_coords' + d + '.csv'))
     return xs, ys, ids
 
 
-# --------------------------
+def _add_to_dataframe(dim, start, df):
+    if dim == 0:
+        df['z_start'].append(start)
+    if dim == 1:
+        df['y_start'].append(start)
+    if dim == 2:
+        df['x_start'].append(start)
+
+
+# -----------------------------------------------------------------------------
 # Lable Generating Functions
-# --------------------------
+# -----------------------------------------------------------------------------
 
 def get_training_labels(
                         l, 
                         channels=('z-1', 'y-1', 'x-1', 'centreness'),
                         scale=(4, 1, 1)):
     labels = []
+    get_offsets = False
+    for chan in channels:
+        if chan.startswith('offsets-'):
+            get_offsets = True
+    if get_offsets:
+        offsets = get_centre_offsets(l, scale)
     for chan in channels:
         if chan.startswith('z'):
             axis = 0
@@ -213,15 +243,35 @@ def get_training_labels(
             lab = get_centreness(l, scale=scale, log=True)
         elif chan == 'centroid-gauss':
             lab = get_gauss_centroids(l)
+        elif chan.startswith('offsets-'):
+            a = _offset_channel(chan)
+            lab = offsets[a]
         else:
             m = f'Unrecognised channel type: {chan} \n'
-            m = m + 'Please enter str of form axis-n for nth affinity \n'
-            m = m + 'or centreness for centreness score.'
+            m = m + 'Please enter str of form <axis>-<n> for nth affinity (e.g., z-1), \n'
+            m = m + 'centreness for centreness score (option of -log for log of centreness),\n'
+            m = m + 'or offset-<axis> (e.g., offset-z) for axis offsets'
             raise ValueError(m)
         labels.append(lab)
     labels = np.stack(labels, axis=0)
     return labels
 
+
+def _offset_channel(chan):
+    if chan.endswith('z'):
+        a = 0
+    elif chan.endswith('y'):
+        a = 1
+    elif chan.endswith('x'):
+        a = 2
+    else:
+        raise ValueError(f'Incompatible offset axis name: {chan}')
+    return a
+
+
+# ----------
+# Affinities
+# ----------
 
 def nth_affinity(labels, n, axis):
     affinities = []
@@ -246,6 +296,37 @@ def nth_affinity(labels, n, axis):
     return affinities
 
 
+# not currently referenced, uses nth_affinity() for generality
+def get_affinities(image):
+    """
+    Get short-range voxel affinities for a segmentation. Affinities are 
+    belonging to {0, 1} where 1 represents a segment boarder voxel in a
+    particular direction. Affinities are produced for each dimension of 
+    the labels and each dim has its own channel (e.g, (3, z, y, x)). 
+
+    Note
+    ----
+    Others may represent affinities with {-1, 0}, because technically... 
+    My network wasn't designed for this :)
+    """
+    padded = np.pad(image, 1, mode='reflect')
+    affinities = []
+    for i in range(len(image.shape)):
+        a = np.diff(padded, axis=i)
+        a = np.where(a != 0, 1.0, 0.0)
+        a = a.astype(np.float32)
+        s_ = [slice(1, -1)] * len(image.shape)
+        s_[i] = slice(None, -1)
+        s_ = tuple(s_)
+        affinities.append(a[s_])
+    affinities = np.stack(affinities)
+    return affinities    
+
+
+# -----------
+# Centredness
+# -----------
+
 def get_centreness(labels, scale=(4, 1, 1), log=False, power=False):
     """
     Obtains a centreness score for each voxel belonging to a labeled object.
@@ -261,20 +342,21 @@ def get_centreness(labels, scale=(4, 1, 1), log=False, power=False):
     Unfortunately, skimage doesn't yet have a method for finding the  
     medioid (more dev, *sigh*).
     """
-    t = time()
-    props = regionprops(labels)
-    centroids = [prop['centroid'] for prop in props]
-    centroids = np.stack(centroids)
-    labs = [prop['label'] for prop in props]
-    new = np.zeros(labels.shape)
     scale = np.array(scale)
-    with tqdm(total=len(centroids), desc='Score centreness') as progress:
-        for i, c in enumerate(centroids):
-            mask = labels == labs[i]
-            indices, values = inverse_dist_score(mask, c, scale, log=log, power=power)
-            new[indices] = values
-            progress.update(1)
-    # new = np.where(np.isnan(new), 0., new)
+    def dist_score(mask):
+        output = np.zeros_like(mask, dtype=np.float32)
+        c = np.mean(np.argwhere(mask), axis=0)
+        indices, values = inverse_dist_score(
+                mask, c, scale, log=log, power=power
+                )
+        output[indices] = values
+        return output
+    t = time()
+    props = regionprops(labels, extra_properties=(dist_score,))
+    new = np.zeros(labels.shape, dtype=np.float32)
+    for i, prop in tqdm(enumerate(props), desc='Score centreness'):
+        new[prop.slice] += prop.dist_score
+    new = np.nan_to_num(new)
     print('------------------------------------------------------------')
     print(f'Obtained centreness scores in {time() - t} seconds')
     return new
@@ -310,6 +392,72 @@ def inverse_dist_score(mask, centroid, scale, log, power):
     return indices, values
 
 
+# --------------
+# Centre Offsets
+# --------------
+
+def get_centre_offsets(labels, scale):
+    scale = np.array(scale)
+    def offsets(mask):
+        shape = np.insert(mask.shape, -3, 3)
+        output = np.zeros(shape, dtype=np.float32)
+        #print(output.shape)
+        c = np.mean(np.argwhere(mask), axis=0)
+        indices, values = centre_offsets(c, mask, scale)
+        #print(indices, values)
+        output[indices] = values
+        return output
+    t = time()
+    props = regionprops(labels, extra_properties=(offsets,))
+    new = np.zeros(np.insert(labels.shape, -3, 3), dtype=np.float32)
+    for i, prop in tqdm(enumerate(props), desc='Get axial centre offsets'):
+        #print(new.shape, prop.offsets.shape, prop.slice)
+        s_ = [slice(None, None), ]
+        for s in prop.slice:
+            s_.append(s)
+        s_ = tuple(s_)
+        new[s_] += prop.offsets
+    new = np.nan_to_num(new)
+    print('------------------------------------------------------------')
+    print(f'Obtained centre offsets in {time() - t} seconds')
+    return new
+
+
+def centre_offsets(c, mask, scale, axes=3):
+    idxs = np.argwhere(mask > 0)
+    indices = []
+    distances = []
+    for a in range(axes):
+        a_distances = []
+        a_indices = []
+        for i in range(idxs.shape[0]):
+            idx = idxs[i, ...]
+            diff = (c - idx) * scale
+            # add indicies and offset
+            a_indices.append(np.insert(idx, 0, a))
+            a_distances.append(diff[a])
+        a_indices = np.array(a_indices)
+        indices.append(a_indices)
+        a_distances = np.array(a_distances)
+        new = []
+        for d in a_distances:
+            if d > 0:
+                new.append((d / a_distances.max()))
+            elif d == 0:
+                new.append(0)
+            elif d < 0:
+                new.append(-(d / a_distances.min()))
+        distances.append(np.array(new))
+    indices = np.concatenate(indices)
+    indices = tuple(indices.T.tolist())
+    distances = np.concatenate(distances)
+    return indices, distances
+
+
+# ------------------
+# Smoothed Centroids
+# ------------------
+
 # not used
 def get_gauss_centroids(labels, sigma=1, z=0):
     centroids = [prop['centroid'] for prop in regionprops(labels)]
@@ -329,36 +477,10 @@ def get_gauss_centroids(labels, sigma=1, z=0):
     return out
 
 
-# not currently referenced, uses nth_affinity() for generality
-def get_affinities(image):
-    """
-    Get short-range voxel affinities for a segmentation. Affinities are 
-    belonging to {0, 1} where 1 represents a segment boarder voxel in a
-    particular direction. Affinities are produced for each dimension of 
-    the labels and each dim has its own channel (e.g, (3, z, y, x)). 
 
-    Note
-    ----
-    Others may represent affinities with {-1, 0}, because technically... 
-    My network wasn't designed for this :)
-    """
-    padded = np.pad(image, 1, mode='reflect')
-    affinities = []
-    for i in range(len(image.shape)):
-        a = np.diff(padded, axis=i)
-        a = np.where(a != 0, 1.0, 0.0)
-        a = a.astype(np.float32)
-        s_ = [slice(1, -1)] * len(image.shape)
-        s_[i] = slice(None, -1)
-        s_ = tuple(s_)
-        affinities.append(a[s_])
-    affinities = np.stack(affinities)
-    return affinities    
-
-
-# -------------
+# -----------------------------------------------------------------------------
 # Log and Print
-# -------------
+# -----------------------------------------------------------------------------
 
 def print_labels_info(channels, out_dir=None, log_name='log.txt'):
     print(LINE)
@@ -377,6 +499,9 @@ def print_labels_info(channels, out_dir=None, log_name='log.txt'):
             n = 'log centreness score'
         elif chan == 'centroid-gauss':
             n = 'gaussian centroids'
+        elif chan.startswith('offsets'):
+            a = chan[-1]
+            n = f'{a}-axis centre offsets'
         else:
             n = 'Unknown channel type'
         s = f'Channel {i}: {n}'
@@ -385,9 +510,9 @@ def print_labels_info(channels, out_dir=None, log_name='log.txt'):
             write_log(s, out_dir, log_name)
 
 
-# -----------
+# -----------------------------------------------------------------------------
 # Save Output
-# -----------
+# -----------------------------------------------------------------------------
 
 def save_random_chunks(xs, ys, labs, out_dir):
     '''
@@ -424,9 +549,9 @@ def save_random_chunks(xs, ys, labs, out_dir):
     return ids
 
 
-# ---------------
+# -----------------------------------------------------------------------------
 # Load Train Data
-# ---------------
+# -----------------------------------------------------------------------------
 
 def load_train_data(
                     data_dir, 
@@ -519,5 +644,22 @@ def normalise_data(image):
 
 
 if __name__ =="__main__":
-    #
-    pass
+    import zarr
+    import napari
+    # Directory for training data and network output 
+    data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
+    # Path for original image volumes for which GT was generated
+    image_paths = [os.path.join(data_dir, '191113_IVMTR26_I3_E3_t58_cang_training_image.zarr')] 
+    # Path for GT labels volumes
+    labels_paths = [os.path.join(data_dir, '191113_IVMTR26_I3_E3_t58_cang_training_labels.zarr')]
+    labs = zarr.open(labels_paths[0])
+    labs = np.array(labs)
+    cent_off = get_centre_offsets(labs, (4, 1, 1))
+    v = napari.Viewer()
+    z = cent_off[0] # - cent_off[0].min()
+    v.add_image(z, name='Z offsets', colormap='bop purple', blending='additive', scale=(4, 1, 1))
+    y = cent_off[1] #- cent_off[1].min()
+    v.add_image(y, name='Y offsets', colormap='bop orange', blending='additive', scale=(4, 1, 1))
+    x = cent_off[2] #- cent_off[2].min()
+    v.add_image(x, name='X offsets', colormap='bop blue', blending='additive', scale=(4, 1, 1))
+    napari.run()

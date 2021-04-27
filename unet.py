@@ -83,6 +83,8 @@ class ConvModule(nn.Module):
             x = self.sm(x)
         elif self.final == 'sigmoid':
             x = torch.sigmoid(x)
+        elif self.final == 'tanh':
+            x = torch.tanh(x)
         return x
 
 
@@ -111,7 +113,8 @@ class UNet(nn.Module):
                  out_channels=3, 
                  down_factors=(1, 2, 2), 
                  up='convolution', 
-                 downsample_1_at_bottom=True
+                 downsample_1_at_bottom=True, 
+                 chan_final_activations=None
                  ):
         '''
         Anisotropic U-net
@@ -128,7 +131,12 @@ class UNet(nn.Module):
             'convolution': use inverse convolutions with learnable parameters
         '''
         super(UNet, self).__init__()
-
+        self.forked = isinstance(out_channels, tuple)
+        if not self.forked:
+            out_channels = (out_channels,)
+        else:
+            self.forks = len(out_channels)
+        self.out_channels = out_channels
         # Max pooling 
         # -----------
         # encoder: downsample 4 times
@@ -173,7 +181,13 @@ class UNet(nn.Module):
         self.c5 = ConvModule(256 * 2, 128)
         self.c6 = ConvModule(128 * 2, 64)
         self.c7 = ConvModule(64 * 2, 32)
-        self.c8 = ConvModule(32 * 2, out_channels, final='sigmoid')
+        for i, c in enumerate(out_channels):
+            if chan_final_activations is not None:
+                final = chan_final_activations[i]
+            else:
+                final = 'sigmoid'
+            cmd = f'self.c8_{i} = ConvModule(32 * 2, {c}, final=\'{final}\')'
+            exec(cmd)
 
         # Upsampling
         # ----------
@@ -250,6 +264,20 @@ class UNet(nn.Module):
     def forward(self, x):
         # Encoder
         # -------
+        x, c0, c1, c2, c3 = self.encoder(x)
+ 
+        # Decoder
+        # -------
+        if self.forked:
+            x = self.forked_decoder(x, c0, c1, c2, c3)
+        else:
+            x = self.decoder(x, c0, c1, c2, c3)
+        return x
+
+    
+    def encoder(self, x):
+        # Encoder
+        # -------
         c0 = self.c0(x)
         x = self.d0(c0)
         c1 = self.c1(x)
@@ -259,9 +287,25 @@ class UNet(nn.Module):
         c3 = self.c3(x)
         x = self.d3(c3)
         x = self.c4(x)
+        return x, c0, c1, c2, c3
 
+
+    def forked_decoder(self, x, c0, c1, c2, c3):
         # Decoder
         # -------
+        started = False
+        for i in range(self.forks):
+            x = x.clone()
+            if not started:
+                x0 = self.decoder(x, c0, c1, c2, c3, i=i)
+                started = True
+            else:
+                x1 = self.decoder(x, c0, c1, c2, c3, i=i)
+                x0 = torch.cat((x0, x1), dim=1)
+        return x0
+
+
+    def decoder(self, x, c0, c1, c2, c3, i=0):
         x = self.up0(x)
         # quick dumb hack for concatenation 
         x = x[:, :, :, :-1, :-1]
@@ -278,8 +322,45 @@ class UNet(nn.Module):
         x = self.up3(x)
         x = x[:, :, :, 1:-1, 1:-1]
         x = torch.cat([x, c0], 1)
-        x = self.c8(x)
+        if i == 0:
+            x = self.c8_0(x)
+        elif i == 1:
+            x = self.c8_1(x)
+            # so on and so forth? Couldn't make the below work
+        #cmd = f'x = self.c8_{i}(x)'
+        #exec(cmd)
         return x
+
+    
+
+
+
+
+class ForkedUNet(UNet):
+    def __init__(self, in_channels=1, fork_channels=(8, 2)):
+        super(ForkedUNet, self).__init__(in_channels=in_channels, out_channels=fork_channels)
+        self.forks = len(fork_channels)
+
+
+    def forward(self, x):
+        # Encoder
+        # -------
+        x, c0, c1, c2, c3 = self.encoder(x)
+        print('forked unet')
+ 
+        # Decoder
+        # -------
+        started = False
+        for i in range(self.forks):
+            x = x.clone()
+            if not started:
+                x0 = self.decoder(x, c0, c1, c2, c3, i=i)
+                print('out shape: ', x0.shape)
+            else:
+                x1 = self.decoder(x, c0, c1, c2, c3, i=i)
+                print('out shape: ', x1.shape)
+                x0 = torch.cat(x0, x1, dim=1)
+        return x0
 
 
 

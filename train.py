@@ -1,4 +1,5 @@
-from custom_loss import WeightedBCELoss, DiceLoss, channel_losses_to_dict
+from custom_loss import WeightedBCELoss, DiceLoss, EpochwiseWeightedBCELoss, \
+    channel_losses_to_dict, ChannelwiseLoss
 from datetime import datetime
 import dask.array as da
 from helpers import LINE, write_log
@@ -6,13 +7,14 @@ import napari
 import numpy as np
 import os
 import pandas as pd
+from plots import save_loss_plot, save_channel_loss_plot
 from tifffile import TiffWriter 
 import torch 
 import torch.nn as nn
 import torch.optim as optim
 from train_io import get_train_data, load_train_data
 from tqdm import tqdm
-from unet import UNet
+from unet import UNet, ForkedUNet
 
 
 # DICE seems to be more common but BCE Loss is also used for 
@@ -42,6 +44,11 @@ def train_unet(
                chan_weights=(1., 2., 2.), # for weighted BCE
                weights=None,
                update_every=20, 
+               losses=None, 
+               chan_losses=None,
+               # network architechture
+               fork_channels=None,
+               chan_final_activations=None,
                **kwargs
                ):
     '''
@@ -112,29 +119,39 @@ def train_unet(
     For each ID, a labels and an image file must be found or else an
     assertion error will be raised.
     '''
+    # Device
+    device_name = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = torch.device(device_name)
     # initialise U-net
-    unet = UNet(out_channels=len(channels))
+    if fork_channels is None:
+        unet = UNet(out_channels=len(channels), 
+                    chan_final_activations=chan_final_activations).to(device, 
+                                                                      dtype=torch.float32)
+    else:
+        unet = UNet(out_channels=fork_channels, 
+                    chan_final_activations=chan_final_activations).to(device, 
+                                                                      dtype=torch.float32)
     # load weights if applicable 
     weights_are = _load_weights(weights, unet)
     # define the optimiser
     optimiser = optim.Adam(unet.parameters(), lr=lr)
     # define the loss function
-    loss = _get_loss_function(loss_function, chan_weights)
+    loss = _get_loss_function(loss_function, chan_weights, device, losses, chan_losses)
     # get the dictionary that will be converted to a csv of losses
     #   contains columns for each channel, as we record channel-wise
     #   BCE loss in addition to the loss used for backprop
     channels = _index_channels_if_none(channels, xs) 
     loss_dict = _get_loss_dict(channels)
     if validate:
-        v_loss = _get_loss_function(loss_function, chan_weights)
+        v_loss = _get_loss_function(loss_function, chan_weights, device, losses, chan_losses)
         validation_dict = {'epoch' : [], 
-                           'validation_loss' : []}
-        no_iter = (epochs * len(xs)) + (epochs * len(v_xs))
+                           'validation_loss' : [], 
+                           'data_id' : [], 
+                           'batch_id': []
+                           }
+        no_iter = (epochs * len(xs)) + ((epochs + 1) * len(v_xs))
     else:
         no_iter = epochs * len(xs)
-    # Device
-    device_name = 'cuda' if torch.cuda.is_available() else 'cpu'
-    device = torch.device(device_name)
     # print the training into and log if applicable 
     bce_weights = _bce_weights(loss) # gets weights if using WeightedBCE
     _print_train_info(loss_function, bce_weights, epochs, lr, 
@@ -142,24 +159,40 @@ def train_unet(
     # loop over training data 
     y_hats, v_y_hats = _train_loop(no_iter, epochs, xs, ys, ids, device, unet, 
                                    out_dir, optimiser, loss, loss_dict,  
-                                   validate, v_xs, v_ys, validation_dict, 
+                                   validate, v_xs, v_ys, v_ids, validation_dict, 
                                    v_loss, update_every, log, suffix, channels)
     _save_final_results(unet, out_dir, suffix, y_hats, ids, validate, 
                         loss_dict, v_y_hats, v_ids, validation_dict)
+    #_plots(out_dir, suffix, loss_function, validate) # 2 leaked semaphore objects... pytorch x mpl??
     return unet
 
 
 
-def _get_loss_function(loss_function, chan_weights):
+def _plots(out_dir, suffix, loss_function, validate):
+    l_path = os.path.join(out_dir, 'loss_' + suffix + '.csv')
+    v_path = None
+    if validate:
+        vl_path = os.path.join(out_dir, 'validation-loss_' + suffix + '.csv')
+    save_loss_plot(l_path, loss_function, v_path=vl_path, show=False)
+    save_channel_loss_plot(l_path, show=False)
+
+
+
+def _get_loss_function(loss_function, chan_weights, device, 
+                       losses, chan_losses):
     # define the loss function
     if loss_function == 'BCELoss':
         loss = nn.BCELoss()
     elif loss_function == 'DiceLoss':
         loss = DiceLoss()
     elif loss_function == 'WeightedBCE':
-        loss = WeightedBCELoss(chan_weights=chan_weights)
+        loss = WeightedBCELoss(chan_weights=chan_weights, device=device)
     #elif loss_function == 'BCECentrenessPenalty':
        # loss = BCELossWithCentrenessPenalty()
+    elif loss_function == 'EpochWeightedBCE':
+        loss = EpochwiseWeightedBCELoss(weights_list=chan_weights, device=device)
+    elif loss_function == 'Channelwise':
+        loss = ChannelwiseLoss(losses, chan_losses, device)
     else:
         m = 'Valid loss options are BCELoss, WeightedBCE, and DiceLoss'
         raise ValueError(m)
@@ -220,11 +253,22 @@ def _print_train_info(loss_function, bce_weights, epochs, lr,
 
 def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
                 optimiser, loss, loss_dict,  validate, v_xs, v_ys, 
-                validation_dict, v_loss, update_every, log, suffix, 
-                channels):
-     # loop over training data 
+                v_ids, validation_dict, v_loss, update_every, log, 
+                suffix, channels):
+    v_y_hats = None
+    # loop over training data 
+    unet = unet.to(device=device, dtype=torch.float32)
     with tqdm(total=no_iter, desc='unet training') as progress:
         for e in range(epochs):
+            _set_epoch_if_epoch_weighted(loss, e)
+            if validate and e == 0:
+                _set_epoch_if_epoch_weighted(v_loss, e, verbose=False)
+                if e == 0:
+                    # first validation at the start of the first epoch
+                    v_y_hats = _validate(v_xs, v_ys, v_ids, 
+                                         device, unet, v_loss, 
+                                         progress, log, out_dir, 
+                                         validation_dict, e, 0)
             running_loss = 0.0
             y_hats = []
             for i in range(len(xs)):
@@ -241,13 +285,22 @@ def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
                         write_log(s, out_dir)
                     running_loss = 0.0
             if validate:
-                v_y_hats = _validate(v_xs, v_ys, device, unet, v_loss, 
-                                     progress, log, out_dir, validation_dict, e)
-            else:
-                v_y_hats = None
+                # validation at the end of the epoch
+                batch_no = ((e + 1) * len(xs))
+                v_y_hats = _validate(v_xs, v_ys, v_ids, 
+                                     device, unet, v_loss, 
+                                     progress, log, out_dir, 
+                                     validation_dict, e, batch_no)
             _save_checkpoint(unet.state_dict(), out_dir, 
                              f'{suffix}_epoch-{e}')  
     return y_hats, v_y_hats
+
+
+def _set_epoch_if_epoch_weighted(loss, e, verbose=True):
+    if isinstance(loss, EpochwiseWeightedBCELoss):
+        loss.current_epoch = e
+        if verbose:
+            print(f'Channel weights set to {loss.current_weights.data} for epoch {e} ')
 
 
 def _train_step(i, xs, ys, ids, device, unet, optimiser, 
@@ -259,7 +312,7 @@ def _train_step(i, xs, ys, ids, device, unet, optimiser,
     l = loss(y_hat, y)
     l.backward()
     optimiser.step()
-    loss_dict['epoch'].append(e)
+    loss_dict['epoch'].append(e) 
     loss_dict['batch_num'].append(i)
     loss_dict['loss'].append(l.item())
     loss_dict['data_id'].append(ids[i])
@@ -267,8 +320,8 @@ def _train_step(i, xs, ys, ids, device, unet, optimiser,
     return l
 
 
-def _validate(v_xs, v_ys, device, unet, v_loss, progress, 
-             log, out_dir, validation_dict, e):
+def _validate(v_xs, v_ys, v_ids, device, unet, v_loss, progress, 
+             log, out_dir, validation_dict, e, batch_no):
     validation_loss = 0.0
     with torch.no_grad():
         v_y_hats = []
@@ -278,14 +331,16 @@ def _validate(v_xs, v_ys, device, unet, v_loss, progress,
             v_y_hats.append(v_y_hat)
             vl = v_loss(v_y_hat, v_y)
             validation_loss += vl.item()
+            validation_dict['epoch'].append(e)
+            validation_dict['validation_loss'].append(vl.item())
+            validation_dict['data_id'].append(v_ids[i])
+            validation_dict['batch_id'].append(batch_no)
             progress.update(1)
         score = validation_loss / len(v_xs)
         s = f'Epoch {e} - validation loss: {score}'
         print(s)
         if log:
             write_log(s, out_dir)
-        validation_dict['epoch'].append(e)
-        validation_dict['validation_loss'].append(score)
     return v_y_hats
 
 
@@ -326,7 +381,7 @@ def _save_output(y_hats, ids, out_dir, suffix=''):
         n = ids[i] + suffix +'_output.tif'
         p = os.path.join(out_dir, n)
         with TiffWriter(p) as tiff:
-            tiff.write(y_hats[i].detach().numpy())
+            tiff.write(y_hats[i].detach().cpu().numpy())
 
 
 #def test_unet(unet, image_paths, labels_paths, out_dir):
@@ -483,9 +538,9 @@ def _load_validation(validation_dir, out_dir, log):
 
 def train_unet_get_labels(
                           out_dir, 
-                          suffix,
                           image_paths, 
                           labels_paths,
+                          suffix='',
                           channels=('z-1', 'y-1', 'x-1', 'centreness'), 
                           n_each=100,
                           validation_prop=None, 
@@ -496,6 +551,10 @@ def train_unet_get_labels(
                           chan_weights=(1., 2., 2.), # for weighted BCE
                           weights=None,
                           update_every=20,
+                          losses=None, 
+                          chan_losses=None,
+                          fork_channels=None,
+                          chan_final_activations=None,
                           **kwargs
                           ):
     '''
@@ -601,13 +660,12 @@ def train_unet_get_labels(
                       loss_function=loss_function, 
                       chan_weights=chan_weights, # for weighted BCE
                       weights=weights,
-                      update_every=update_every
+                      update_every=update_every, 
+                      fork_channels=fork_channels,
+                      losses=losses, 
+                      chan_losses=chan_losses,
+                      chan_final_activations=chan_final_activations
                       )
     return unet
 
-
-# Another option, but need to build ResBlock :) in unet.py
-
-def train_resunet():
-    pass
 

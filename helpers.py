@@ -92,23 +92,27 @@ def check_ids_match(x, y, regex=r'\d{6}_\d{6}_\d{1,3}'):
 # Load Output from Training 
 # -------------------------
 
-def get_dataset(train_dir, out_dir=None):
+def get_dataset(train_dir, out_dir=None, GT=False):
     # directory for output, if none, assume output is with training data
     if out_dir is None:
         out_dir = train_dir
     # Get output paths and IDs
     output_paths = sorted(get_paths(out_dir, r'\d{6}_\d{6}_\d{1,3}_output.tif'))
     ids = get_ids(output_paths)
-    output = _get_regex_images(out_dir, r'\d{6}_\d{6}_\d{1,3}_output.tif', ids)
+    output = get_regex_images(out_dir, r'\d{6}_\d{6}_\d{1,3}_output.tif', ids)
     # get training data (images and labels) according to id strings, 
     #   which correspond to the batch number.
-    labs = _get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_labels.tif', ids)
-    images = _get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_image.tif', ids)
+    labs = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_labels.tif', ids)
+    images = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_image.tif', ids)
     images = da.stack([images], axis=1)
-    return images, labs, output
+    if GT:
+        ground_truth = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_GT.tif', ids)
+        return images, labs, output, ground_truth
+    else:
+        return images, labs, output
 
 
-def _get_regex_images(data_dir, regex, ids, id_regex=r'\d{6}_\d{6}_\d{1,3}'):
+def get_regex_images(data_dir, regex, ids, id_regex=r'\d{6}_\d{6}_\d{1,3}'):
     id_pattern = re.compile(id_regex)
     imread = delayed(_imread_squeeze, pure=True)  
     file_paths = sorted(get_paths(data_dir, regex))
