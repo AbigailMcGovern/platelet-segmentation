@@ -3,7 +3,11 @@ import numpy as np
 import os
 import pandas as pd
 from pathlib import Path
+import ptitprince as pt
 
+# ----------
+# Loss Plots
+# ----------
 
 def save_loss_plot(path, loss_function, v_path=None, show=True):
     df = pd.read_csv(path)
@@ -120,6 +124,89 @@ def _get_linestyle(lis):
     else:
         ls = ':'
     return ls
+
+
+# --------
+# VI Plots
+# --------
+
+
+def VI_plot(
+            path, 
+            cond_ent_over="GT | Output",  
+            cond_ent_under="Output | GT", 
+            lab="",
+            save=False, 
+            show=True):
+    df = pd.read_csv(path)
+    overseg = df[cond_ent_over].values
+    o_groups = [cond_ent_over] * len(overseg)
+    underseg = df[cond_ent_under].values
+    u_groups = [cond_ent_under] * len(underseg)
+    groups = o_groups + u_groups
+    x = 'Variation of information'
+    y = 'Conditional entropy'
+    data = {
+        x : groups, 
+        y : np.concatenate([overseg, underseg])
+        }
+    data = pd.DataFrame(data)
+    o = 'h'
+    pal = 'Set2'
+    sigma = .2
+    f, ax = plt.subplots(figsize=(12, 10))
+    pt.RainCloud(x = x, y = y, data = data, palette = pal, bw = sigma,
+                 width_viol = .6, ax = ax, orient = o)
+    p = Path(path)
+    plt.title(p.stem)
+    if save:
+        save_path = os.path.join(p.parents[0], p.stem + lab + '_VI_rainclout_plot.png')
+        plt.savefig(save_path, bbox_inches='tight')
+    if show:
+        plt.show()
+
+
+def experiment_VI_plots(
+        paths, 
+        names, 
+        title,
+        out_name,
+        out_dir,
+        cond_ent_over="GT | Output",  
+        cond_ent_under="Output | GT", 
+    ):
+    groups = []
+    ce0 = []
+    ce1 = []
+    for i, p in enumerate(paths):
+        df = pd.read_csv(p)
+        ce0.append(df[cond_ent_over].values)
+        ce1.append(df[cond_ent_under].values)
+        groups += [names[i]] * len(df)
+    x = 'Experiment'
+    data = {
+        x : groups, 
+        cond_ent_over : np.concatenate(ce0), 
+        cond_ent_under : np.concatenate(ce1)
+    }
+    data = pd.DataFrame(data)
+    f, axs = plt.subplots(1, 2, figsize=(12, 10))
+    ax0 = axs[0, 0]
+    ax1 = axs[0, 1]
+    o = 'h'
+    pal = 'Set2'
+    sigma = .2
+    pt.RainCloud(x = x, y = cond_ent_over, data = data, palette = pal, bw = sigma,
+                 width_viol = .6, ax = ax0, orient = o)
+    pt.RainCloud(x = x, y = cond_ent_under, data = data, palette = pal, bw = sigma,
+                 width_viol = .6, ax = ax1, orient = o)
+    plt.title(title)
+    if save:
+        save_path = os.path.join(out_dir, '_VI_rainclould_plots.png')
+        plt.savefig(save_path, bbox_inches='tight')
+    if show:
+        plt.show()
+
 
 
 if __name__ == '__main__':

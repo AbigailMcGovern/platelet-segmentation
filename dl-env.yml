@@ -1,0 +1,29 @@
+name: dl-env
+channels:
+  - conda-forge
+  # - cpape
+dependencies:
+  - python
+  - pip
+  - pytorch=1.8.0=cuda110py39hbc72f07_0
+  - torchvision
+  - cudatoolkit
+  - pandas
+  # nd2reader
+  - scikit-image
+  #- trackpy
+  - dask
+  - dask-jobqueue
+  - distributed
+  - scipy
+  - ipython
+  #- jupyter
+  #- jupyterlab
+  #- opencv
+  - zarr
+  - numpy
+  - tqdm
+  - napari
+  - matplotlib
+  - pip:
+    - tensorstore

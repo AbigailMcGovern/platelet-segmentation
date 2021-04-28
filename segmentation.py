@@ -3,6 +3,7 @@ import dask.array as da
 from helpers import get_dataset, get_regex_images
 import napari
 import numpy as np
+import os
 import pandas as pd
 from scipy.ndimage import label
 from skimage.feature import peak_local_max, blob_dog, blob_log
@@ -27,10 +28,14 @@ def segment_from_directory(
         scale = (4, 1, 1),
         w_scale=None, 
         compactness=0.,
-        display=True
+        display=True, 
+        validation=False, 
+        **kwargs
         #
     ):
-    images, _, output, GT = get_dataset(directory, GT=True)
+    images, _, output, GT = get_dataset(directory, 
+                                        GT=True, 
+                                        validation=validation)
     images = da.squeeze(images)
     print(output.shape)
     segmentations = []
@@ -55,7 +60,11 @@ def segment_from_directory(
     masks = da.stack(masks)
     # Save the VI data
     scores = pd.DataFrame(scores)
-    s_path = os.path.join(directory, suffix + '_VI.csv')
+    if validation:
+        s = 'validation_VI.csv'
+    else:
+        s = '_VI.csv'
+    s_path = os.path.join(directory, suffix + s)
     scores.to_csv(s_path)
     gt_o = scores['GT | Output'].mean()
     o_gt = scores['Output | GT'].mean()

@@ -242,6 +242,8 @@ def get_training_labels(
             m = m + 'Please enter str of form axis-n for nth affinity \n'
             m = m + 'or centreness for centreness score.'
             raise ValueError(m)
+        if chan.endswith('-smooth'):
+            lab = smooth(lab)
         labels.append(lab)
     labels = np.stack(labels, axis=0)
     return labels
@@ -345,12 +347,25 @@ def get_gauss_centroids(labels, sigma=1, z=0):
     for i in range(labels.shape[z]):
         s_ = [slice(None, None)] * labels.ndim
         s_[z] = slice(i, i+1)
+        s_ = tuple(s_)
         plane = np.squeeze(centroid_image[s_])
         gauss_cent.append(filters.gaussian(plane, sigma=sigma))
     out = np.stack(gauss_cent, axis=z)
     out = out - out.min()
     out = out / out.max()
-    print(out.dtype, out.shape, out.max(), out.min())
+    #print(out.dtype, out.shape, out.max(), out.min())
+    return out
+
+
+def smooth(image, z=0, sigma=1):
+    out = []
+    for i in range(image.shape[z]):
+        s_ = [slice(None, None)] * image.ndim
+        s_[z] = slice(i, i+1)
+        s_ = tuple(s_)
+        plane = np.squeeze(image[s_])
+        out.append(filters.gaussian(plane, sigma=sigma))
+    out = np.stack(out, axis=z)
     return out
 
 
