@@ -92,14 +92,19 @@ def check_ids_match(x, y, regex=r'\d{6}_\d{6}_\d{1,3}'):
 # Load Output from Training 
 # -------------------------
 
-def get_dataset(train_dir, out_dir=None, GT=False):
+def get_dataset(train_dir, out_dir=None, GT=False, validation=False):
     # directory for output, if none, assume output is with training data
     if out_dir is None:
         out_dir = train_dir
+    # Get output regular expression
+    if validation == False:
+        out_regex = r'\d{6}_\d{6}_\d{1,3}_output.tif'
+    else:
+        out_regex = r'\d{6}_\d{6}_\d{1,3}_validation_output.tif'
     # Get output paths and IDs
-    output_paths = sorted(get_paths(out_dir, r'\d{6}_\d{6}_\d{1,3}_output.tif'))
+    output_paths = sorted(get_paths(out_dir, out_regex))
     ids = get_ids(output_paths)
-    output = get_regex_images(out_dir, r'\d{6}_\d{6}_\d{1,3}_output.tif', ids)
+    output = get_regex_images(out_dir, out_regex, ids)
     # get training data (images and labels) according to id strings, 
     #   which correspond to the batch number.
     labs = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_labels.tif', ids)
