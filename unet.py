@@ -83,6 +83,8 @@ class ConvModule(nn.Module):
             x = self.sm(x)
         elif self.final == 'sigmoid':
             x = torch.sigmoid(x)
+        elif self.final == 'tanh':
+            x = torch.tanh(x)
         return x
 
 
@@ -111,7 +113,8 @@ class UNet(nn.Module):
                  out_channels=3, 
                  down_factors=(1, 2, 2), 
                  up='convolution', 
-                 downsample_1_at_bottom=True
+                 downsample_1_at_bottom=True, 
+                 chan_final_activations=None
                  ):
         '''
         Anisotropic U-net
@@ -179,7 +182,11 @@ class UNet(nn.Module):
         self.c6 = ConvModule(128 * 2, 64)
         self.c7 = ConvModule(64 * 2, 32)
         for i, c in enumerate(out_channels):
-            cmd = f'self.c8_{i} = ConvModule(32 * 2, {c}, final=\'sigmoid\')'
+            if chan_final_activations is not None:
+                final = chan_final_activations[i]
+            else:
+                final = 'sigmoid'
+            cmd = f'self.c8_{i} = ConvModule(32 * 2, {c}, final=\'{final}\')'
             exec(cmd)
 
         # Upsampling

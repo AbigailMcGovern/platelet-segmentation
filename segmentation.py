@@ -198,6 +198,49 @@ def _remove_unwanted_objects(mask, centroids, min_area=0, max_area=10000):
     return new, np.array(new_cent)
 
 
+def convert_axial_offsets(output, chan_axis=1, zyx_chans=(3, 4, 5)):
+    # get the slices for each axis
+    zs = [slice(None, None)] * output.ndim
+    zs[chan_axis] = zyx_chans[0]
+    ys = [slice(None, None)] * output.ndim
+    ys[chan_axis] = zyx_chans[1]
+    xs = [slice(None, None)] * output.ndim
+    xs[chan_axis] = zyx_chans[2]
+    zs, ys, xs = tuple(zs), tuple(ys), tuple(xs)
+    # get the data
+    z = output[zs]
+    y = output[ys]
+    x = output[xs]
+    if isinstance(output, Array):
+        z = z.compute()
+        y = y.compute()
+        x = x.compute()
+    # get the combined score (l2 norm)
+    c = np.sqrt((z**2 + y**2 + x**2))
+    # get the new output array
+    new_shape = output.shape
+    new_shape[chan_axis] = new_shape[chan_axis] - 2
+    new = np.zeros(new_shape, dtype=output.dtype)
+    # get the slice to take other data from output
+    s_ = [slice(None, None)] * output.ndim
+    s_[chan_axis] = [i for i in range(output[chan_axis]) if i not in zyx_chans]
+    s_ = tuple(s_)
+    # get the slice to put other data into new
+    ns_ = [slice(None, None)] * len(new_shape)
+    ns_[chan_axis] = slice(0, len(s_[chan_axis]))
+    ns_ = tuple(ns_)
+    # add other channels to new
+    new[ns_] = output[s_]
+    # get the slice to add the centre scores to new
+    ns_ = [slice(None, None)] * len(new_shape)
+    ns_[chan_axis] = slice(-1, None)
+    ns_ = tuple(ns_)
+    # add the centre scores
+    new[ns_] = c
+    if isinstance(output, Array):
+        new = da.array(new)
+    return new
+
 
 if __name__ == '__main__':
     import os

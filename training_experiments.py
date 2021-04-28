@@ -1,6 +1,8 @@
 from datetime import datetime
 import os
 import train
+import torch.nn as nn
+
 
 def run_experiment(experiments, image_paths, labels_paths, out_dir):
     for exp in experiments:
@@ -17,7 +19,7 @@ def get_experiment_dict(custom_options):
     experiment = {
             'validation_prop' : 0.2, 
             'n_each' : 100, 
-            'scale' : (4, 1, 1),
+            'scale ' : (4, 1, 1),
             'epochs' : 4,
             'lr' : .01,
             'loss_function' : 'BCELoss',
@@ -204,6 +206,21 @@ if __name__ == '__main__':
             'fork_channels' : (8, 2)
         })
     }
+
+    offsets_experiment = {
+        1 : get_experiment_dict({
+            'name' : 'f_BCE_z-1_y-1_x-1_oz_oy_ox', 
+            'channels' : ('z-1', 'y-1','x-1', 'offsets-z', 'offsets-y', 'offsets-x'), 
+            'fork_channels': (3, 3), 
+            'loss_function' : 'Channelwise',
+            'losses' : [nn.BCELoss(), nn.MSELoss()], 
+            'chan_losses' : [slice(0, 3), slice(3, 6)], 
+            'chan_final_activations' : ['sigmoid', 'tanh']
+        })
+    }
+
+    # Directory for training data and network output 
+    # data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
     # Directory for training data and network output 
     data_dir = '/home/abigail/data/platelet-segmentation-training'
     # Path for original image volumes for which GT was generated
@@ -213,7 +230,13 @@ if __name__ == '__main__':
     # Run the experiments
     #run_experiment(experiments, image_paths, labels_paths, data_dir)
     #run_experiment(cirriculum_exp2, image_paths, labels_paths, data_dir)
-
-    # 20th April 2021
     #run_experiment(forked_exp, image_paths, labels_paths, data_dir)
-    run_experiment(affinities_exp, image_paths, labels_paths, data_dir)
+    #run_experiment(offsets_experiment, image_paths, labels_paths, data_dir)
+
+    # 20th April 2021 - DL machine
+    #run_experiment(forked_exp, image_paths, labels_paths, data_dir)
+    #run_experiment(affinities_exp, image_paths, labels_paths, data_dir)
+    
+    # 26th April 2021 - Macbook pro
+    run_experiment(offsets_experiment, image_paths, labels_paths, data_dir)
+
