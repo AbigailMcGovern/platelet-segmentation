@@ -202,6 +202,7 @@ def experiment_VI_plots(
                  width_viol = .6, ax = ax1, orient = o)
     plt.title(title)
     if save:
+        os.makedirs(out_dir, exist_ok=True)
         save_path = os.path.join(out_dir, '_VI_rainclould_plots.png')
         plt.savefig(save_path, bbox_inches='tight')
     if show:
