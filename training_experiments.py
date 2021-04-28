@@ -17,7 +17,7 @@ def get_experiment_dict(custom_options):
     experiment = {
             'validation_prop' : 0.2, 
             'n_each' : 100, 
-            'scale ' : (4, 1, 1),
+            'scale' : (4, 1, 1),
             'epochs' : 4,
             'lr' : .01,
             'loss_function' : 'BCELoss',
@@ -36,15 +36,59 @@ def get_experiment_dict(custom_options):
         end = ''
     now = datetime.now()
     suffix = now.strftime("%y%m%d_%H%M%S") + end
-    # add the suffix
+    # add the suffix (lol, slash directory name ??!)
+    # NB: it was initially used as a suffix for naming the loss data 
+    # and was never renamed
     experiment['suffix'] = suffix
     return experiment
 
 
 # -----------------
-# Measuing outcomes
+# Experiments
 # -----------------
 
+affinities_exp = {
+        0: get_experiment_dict({
+            'name' : 'z-1s_y-1s_x-1s_c', 
+            'channels' : ('z-1-smooth', 'y-1-smooth', 'x-1-smooth', 'centreness'), 
+        }), 
+        1: get_experiment_dict({
+            'name' : 'z-1_y-1_x-1_c', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'centreness'), 
+        }), 
+        2: get_experiment_dict({
+            'name' : 'z-1_y-1_x-1_cl', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'centreness-log'), 
+        }), 
+        3: get_experiment_dict({
+            'name' : 'z-1_y-1_x-1_c_cl', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'centreness', 'centreness-log'), 
+        }), 
+        4: get_experiment_dict({
+            'name' : 'z-1_y-1_y-2_x-1_x-2_c_cl', 
+            'channels' : ('z-1', 'y-1', 'y-2', 'x-1', 'x-2', 'centreness', 'centreness-log'), 
+        }),
+        5: get_experiment_dict({
+            'name' : 'z-1_z-2_y-1_y-2_x-1_x-2_c_cl', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'x-1', 'x-2', 'centreness', 'centreness-log'), 
+        }), 
+        6: get_experiment_dict({
+            'name' : 'z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log'), 
+        }),
+        7: get_experiment_dict({
+            'name' : 'z-1s_y-1s_x-1s_c_cl', 
+            'channels' : ('z-1-smooth', 'y-1-smooth', 'x-1-smooth', 'centreness', 'centreness-log'), 
+        }), 
+        8: get_experiment_dict({
+            'name' : 'z-1_z-1s_y-1_y-1s_x-1_x-1s_c_cl', 
+            'channels' : ('z-1', 'z-1-smooth', 'y-1', 'y-1-smooth', 'x-1', 'x-1-smooth', 'centreness', 'centreness-log'), 
+        }),
+        9: get_experiment_dict({
+            'name' : 'z-1_z-1s_y-1_y-1s_x-1_x-1s_c_cl', 
+            'channels' : ('z-1', 'z-2-smooth', 'y-1', 'y-2-smooth', 'x-1', 'x-2-smooth', 'centreness', 'centreness-log'), 
+        })
+    } 
 
 # segmentation
 # metric for label similarity??
@@ -52,31 +96,6 @@ def get_experiment_dict(custom_options):
 
 if __name__ == '__main__':
     # Define experiments dictionary here:
-    experiments = {
-        #0: get_experiment_dict({
-         #   'name' : 'z-1_y-1_x-1', 
-          #  'channels' : ('z-1', 'y-1', 'x-1'), 
-        #}), 
-        #1: get_experiment_dict({
-         #   'name' : 'z-1_y-1_x-1_c', 
-          #  'channels' : ('z-1', 'y-1', 'x-1', 'centreness'), 
-        #}), 
-        #2: get_experiment_dict({
-         #   'name' : 'z-1_y-1_x-1_cl', 
-          #  'channels' : ('z-1', 'y-1', 'x-1', 'centreness-log'), 
-        #}), 
-        #3: get_experiment_dict({
-           # 'name' : 'z-1_y-1_x-1_c_cl', 
-           # 'channels' : ('z-1', 'y-1', 'x-1', 'centreness', 'centreness-log'), 
-       # }), 
-        4: get_experiment_dict({
-            'name' : 'z-1_y-1_x-1__wBCE2-1-1', 
-            'channels' : ('z-1', 'y-1', 'x-1'), 
-            'loss_function' : 'WeightedBCE', 
-            'chan_weights' : (2., 1., 1.) 
-        }), 
-         
-    } 
     cirriculum_exp0 = {
         # moderate cirriculum
         0: get_experiment_dict({
@@ -194,4 +213,7 @@ if __name__ == '__main__':
     # Run the experiments
     #run_experiment(experiments, image_paths, labels_paths, data_dir)
     #run_experiment(cirriculum_exp2, image_paths, labels_paths, data_dir)
-    run_experiment(forked_exp, image_paths, labels_paths, data_dir)
+
+    # 20th April 2021
+    #run_experiment(forked_exp, image_paths, labels_paths, data_dir)
+    run_experiment(affinities_exp, image_paths, labels_paths, data_dir)
