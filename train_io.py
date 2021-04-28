@@ -399,10 +399,12 @@ def inverse_dist_score(mask, centroid, scale, log, power):
 # --------------
 
 def get_centre_offsets(labels, scale):
+    m = labels > 0
+    m = []
     scale = np.array(scale)
     def offsets(mask):
         shape = np.insert(mask.shape, -3, 3)
-        output = np.zeros(shape, dtype=np.float32)
+        output = np.zeros(shape, dtype=np.float32) 
         #print(output.shape)
         c = np.mean(np.argwhere(mask), axis=0)
         indices, values = centre_offsets(c, mask, scale)
@@ -411,7 +413,10 @@ def get_centre_offsets(labels, scale):
         return output
     t = time()
     props = regionprops(labels, extra_properties=(offsets,))
-    new = np.zeros(np.insert(labels.shape, -3, 3), dtype=np.float32)
+    #new = np.zeros(np.insert(labels.shape, -3, 3), dtype=np.float32)
+    m = labels > 0
+    m = np.stack([m, m.copy(), m.copy()], axis=0)
+    new = np.where(m == 1, 0., 0.5)
     for i, prop in tqdm(enumerate(props), desc='Get axial centre offsets'):
         #print(new.shape, prop.offsets.shape, prop.slice)
         s_ = [slice(None, None), ]
@@ -449,7 +454,10 @@ def centre_offsets(c, mask, scale, axes=3):
                 new.append(0)
             elif d < 0:
                 new.append(-(d / a_distances.min()))
-        distances.append(np.array(new))
+        d = np.array(new)
+        d = d - (-1)
+        d = d / 2
+        distances.append(d)
     indices = np.concatenate(indices)
     indices = tuple(indices.T.tolist())
     distances = np.concatenate(distances)
@@ -662,7 +670,8 @@ if __name__ =="__main__":
     import zarr
     import napari
     # Directory for training data and network output 
-    data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
+    #data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
+    data_dir = '/home/abigail/data/platelet-segmentation-training'
     # Path for original image volumes for which GT was generated
     image_paths = [os.path.join(data_dir, '191113_IVMTR26_I3_E3_t58_cang_training_image.zarr')] 
     # Path for GT labels volumes

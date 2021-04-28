@@ -219,6 +219,24 @@ if __name__ == '__main__':
         })
     }
 
+    offsets_experiment_0 = {
+        1 : get_experiment_dict({
+            'name' : 'f_BCE_z-1_y-1_x-1_oz_oy_ox', 
+            'channels' : ('z-1', 'y-1','x-1', 'offsets-z', 'offsets-y', 'offsets-x'), 
+            'loss_function' : 'Channelwise',
+            'losses' : [nn.BCELoss(), nn.MSELoss()], 
+            'chan_losses' : [slice(0, 3), slice(3, 6)], 
+            'chan_final_activations' : ['sigmoid', 'sigmoid']
+        })
+    }
+
+    offsets_experiment_1 = {
+        1 : get_experiment_dict({
+            'name' : 'f_BCE_z-1_y-1_x-1_oz_oy_ox', 
+            'channels' : ('z-1', 'y-1','x-1', 'offsets-z', 'offsets-y', 'offsets-x'), 
+        })
+    }
+
     # Directory for training data and network output 
     # data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
     # Directory for training data and network output 
@@ -238,5 +256,5 @@ if __name__ == '__main__':
     #run_experiment(affinities_exp, image_paths, labels_paths, data_dir)
     
     # 26th April 2021 - Macbook pro
-    run_experiment(offsets_experiment, image_paths, labels_paths, data_dir)
+    run_experiment(offsets_experiment_1, image_paths, labels_paths, data_dir)
 
