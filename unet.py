@@ -3,6 +3,24 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
+# globals
+decoder_instructions = {
+            5: {
+                'in' : 256 * 2, 
+                'out': 128
+            }, 
+            6: {
+                'in' : 128 * 2, 
+                'out': 64
+            }, 
+            7: {
+                'in' : 64 * 2, 
+                'out': 32
+            }, 
+        }
+
+
 # convolution module
 class ConvModule(nn.Module):
     def __init__(
@@ -178,10 +196,12 @@ class UNet(nn.Module):
         self.c4 = ConvModule(256, 256)
 
         # decoder convolutions
-        self.c5 = ConvModule(256 * 2, 128)
-        self.c6 = ConvModule(128 * 2, 64)
-        self.c7 = ConvModule(64 * 2, 32)
         for i, c in enumerate(out_channels):
+            for key in decoder_instructions.keys():
+                n, in_c, = key, decoder_instructions[key]['in']
+                out_c = decoder_instructions[key]['out']
+                cmd = f'self.c{n}_{i} = ConvModule({in_c}, {out_c})'
+                exec(cmd)
             if chan_final_activations is not None:
                 final = chan_final_activations[i]
             else:
@@ -310,21 +330,33 @@ class UNet(nn.Module):
         # quick dumb hack for concatenation 
         x = x[:, :, :, :-1, :-1]
         x = torch.cat([x, c3], 1)
-        x = self.c5(x)
-        x = self.up1(x)
-        x = x[:, :, :, :-1, :-1]
-        x = torch.cat([x, c2], 1)
-        x = self.c6(x)
-        x = self.up2(x)
-        x = x[:, :, :, :-1, :-1]
-        x = torch.cat([x, c1], 1)
-        x = self.c7(x)
-        x = self.up3(x)
-        x = x[:, :, :, 1:-1, 1:-1]
-        x = torch.cat([x, c0], 1)
         if i == 0:
+            x = self.c5_0(x)
+            x = self.up1(x)
+            x = x[:, :, :, :-1, :-1]
+            x = torch.cat([x, c2], 1)
+            x = self.c6_0(x)
+            x = self.up2(x)
+            x = x[:, :, :, :-1, :-1]
+            x = torch.cat([x, c1], 1)
+            x = self.c7_0(x)
+            x = self.up3(x)
+            x = x[:, :, :, 1:-1, 1:-1]
+            x = torch.cat([x, c0], 1)
             x = self.c8_0(x)
         elif i == 1:
+            x = self.c5_1(x)
+            x = self.up1(x)
+            x = x[:, :, :, :-1, :-1]
+            x = torch.cat([x, c2], 1)
+            x = self.c6_1(x)
+            x = self.up2(x)
+            x = x[:, :, :, :-1, :-1]
+            x = torch.cat([x, c1], 1)
+            x = self.c7_1(x)
+            x = self.up3(x)
+            x = x[:, :, :, 1:-1, 1:-1]
+            x = torch.cat([x, c0], 1)
             x = self.c8_1(x)
             # so on and so forth? Couldn't make the below work
         #cmd = f'x = self.c8_{i}(x)'
