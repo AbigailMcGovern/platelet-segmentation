@@ -155,7 +155,8 @@ def train_unet(
     # print the training into and log if applicable 
     bce_weights = _bce_weights(loss) # gets weights if using WeightedBCE
     _print_train_info(loss_function, bce_weights, epochs, lr, 
-                     weights_are, device_name, out_dir, log)
+                      weights_are, device_name, out_dir, log, 
+                      chan_losses, losses, channels, fork_channels)
     # loop over training data 
     y_hats, v_y_hats = _train_loop(no_iter, epochs, xs, ys, ids, device, unet, 
                                    out_dir, optimiser, loss, loss_dict,  
@@ -193,6 +194,8 @@ def _get_loss_function(loss_function, chan_weights, device,
         loss = EpochwiseWeightedBCELoss(weights_list=chan_weights, device=device)
     elif loss_function == 'Channelwise':
         loss = ChannelwiseLoss(losses, chan_losses, device)
+    elif loss_function == 'MSELoss':
+        loss = nn.MSELoss()
     else:
         m = 'Valid loss options are BCELoss, WeightedBCE, and DiceLoss'
         raise ValueError(m)
@@ -235,15 +238,30 @@ def _bce_weights(loss):
 
 
 def _print_train_info(loss_function, bce_weights, epochs, lr, 
-                     weights_are, device_name, out_dir, log):
+                     weights_are, device_name, out_dir, log, 
+                     chan_losses, losses, channels, fork_channels):
     s = LINE + '\n' + f'Loss function: {loss_function} \n'
     if bce_weights is not None:
-        s = s + f'Loss function channel weights: {bce_weights} \n'
+        s = s + f'    Loss function channel weights: {bce_weights} \n'
+    if losses is not None:
+        chan_bd = []
+        for c in chan_losses:
+            if isinstance(c, slice):
+                chan_bd.append(f'[{c.start}, {c.stop})')
+            else:
+                chan_bd.append(str(c))
+        for i, l in enumerate(losses):
+            s = s + f'    Loss for channels {chan_bd[i]}: {l}\n'
     s = s + 'Optimiser: Adam \n' + f'Learning rate: {lr} \n'
     s = s + LINE + '\n' 
     s = s + f'Training {weights_are} U-net for {epochs} '
     s = s + 'epochs with batch size 1 \n'
-    s = s + f'Device: {device_name} \n' + LINE
+    s = s + f'Device: {device_name} \n'
+    if channels is not None:
+        s = s + f'Channels: {channels}\n'
+    if fork_channels is not None:
+        s = s + f'Channels per fork (according to channel order): {fork_channels}\n' 
+    s = s + LINE
     print(s)
     if log:
         write_log(LINE, out_dir)
@@ -316,7 +334,7 @@ def _train_step(i, xs, ys, ids, device, unet, optimiser,
     loss_dict['batch_num'].append(i)
     loss_dict['loss'].append(l.item())
     loss_dict['data_id'].append(ids[i])
-    channel_losses_to_dict(y_hat, y, channels, loss_dict)
+    channel_losses_to_dict(y_hat, y, channels, loss, loss_dict)
     return l
 
 

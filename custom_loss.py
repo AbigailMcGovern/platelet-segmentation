@@ -5,11 +5,11 @@ import torch
 import torch.nn as nn
 
 
-def channel_losses_to_dict(inputs, targets, channels, loss_dict):
-    if targets.max() < 1 and targets.min() > 0:
-        loss = nn.BCELoss()
-    else:
-        loss = nn.MSELoss()
+def channel_losses_to_dict(inputs, targets, channels, loss, loss_dict):
+    #if targets.max() < 1 and targets.min() > 0:
+    #loss = nn.BCELoss()
+    #else:
+       # loss = nn.MSELoss()
     for i, c in enumerate(channels):
         c_input = inputs[:, i, ...].detach()
         c_target = targets[:, i, ...].detach()

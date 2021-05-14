@@ -19,7 +19,7 @@ def get_experiment_dict(custom_options):
     experiment = {
             'validation_prop' : 0.2, 
             'n_each' : 100, 
-            'scale ' : (4, 1, 1),
+            'scale' : (4, 1, 1),
             'epochs' : 4,
             'lr' : .01,
             'loss_function' : 'BCELoss',
@@ -42,6 +42,8 @@ def get_experiment_dict(custom_options):
     # NB: it was initially used as a suffix for naming the loss data 
     # and was never renamed
     experiment['suffix'] = suffix
+    if 'mask' in experiment['channels']:
+        experiment['absolute_thresh'] = 0.5
     return experiment
 
 
@@ -87,50 +89,104 @@ affinities_exp = {
             'channels' : ('z-1', 'z-1-smooth', 'y-1', 'y-1-smooth', 'x-1', 'x-1-smooth', 'centreness', 'centreness-log'), 
         }),
         9: get_experiment_dict({
-            'name' : 'z-1_z-1s_y-1_y-1s_x-1_x-1s_c_cl', 
+            'name' : 'z-1_z-2s_y-1_y-2s_x-1_x-2s_c_cl', 
             'channels' : ('z-1', 'z-2-smooth', 'y-1', 'y-2-smooth', 'x-1', 'x-2-smooth', 'centreness', 'centreness-log'), 
         })
     } 
 
-# segmentation
-# metric for label similarity??
-# examine relationship between channels?
 
-if __name__ == '__main__':
-    # Define experiments dictionary here:
-    cirriculum_exp0 = {
-        # moderate cirriculum
-        0: get_experiment_dict({
-            'name' : 'EWBCE_0_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
-            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log'), 
-            'loss_function' : 'EpochWeightedBCE', 
-            'chan_weights' : [
-                [0., 3., 0., 1., 2., 0., 1., 2., 2., 1.],
-                [1., 2., 1., 1., 1., 1., 1., 1., 2., 1.],
-                [2., 1., 2., 1., 0., 2., 1., 0., 1., 2.],
-                [3., 0., 3., 0., 0., 3., 0., 0., 0., 3.]
-            ]
+affinities_exp_0 = {
+        8: get_experiment_dict({
+            'name' : 'z-1_z-1s_y-1_y-1s_x-1_x-1s_c_cl', 
+            'channels' : ('z-1', 'z-1-smooth', 'y-1', 'y-1-smooth', 'x-1', 'x-1-smooth', 'centreness', 'centreness-log'), 
+        }),
+        9: get_experiment_dict({
+            'name' : 'z-1_z-2s_y-1_y-2s_x-1_x-2s_c_cl', 
+            'channels' : ('z-1', 'z-2-smooth', 'y-1', 'y-2-smooth', 'x-1', 'x-2-smooth', 'centreness', 'centreness-log'), 
         })
-    }
-    cirriculum_exp1 = {
-        # graded cirriculum
+    } 
+
+
+affinities_exp_1 = {
+        3: get_experiment_dict({
+            'name' : 'z-1_y-1_x-1_c_cl', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'centreness', 'centreness-log'), 
+            'fork_channels': (3, 2)
+        }), 
+        5: get_experiment_dict({
+            'name' : 'z-1_z-2_y-1_y-2_x-1_x-2_c_cl', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'x-1', 'x-2', 'centreness', 'centreness-log'),
+            'fork_channels': (6, 2) 
+        }), 
+        6: get_experiment_dict({
+            'name' : 'z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log'), 
+            'fork_channels': (8, 2)
+        })
+}
+
+mask_exp = {
+        3: get_experiment_dict({
+            'name' : 'z-1_y-1_x-1_m_cl', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centreness-log'), 
+        }), 
+        5: get_experiment_dict({
+            'name' : 'z-1_z-2_y-1_y-2_x-1_x-2_m_cl', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'x-1', 'x-2', 'mask', 'centreness-log'), 
+        }), 
+        6: get_experiment_dict({
+            'name' : 'z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_m_cl', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'mask', 'centreness-log'), 
+            })
+}
+
+
+forked_exp = {
+        3: get_experiment_dict({
+            'name' : 'f3,2_z-1_y-1_x-1_m_cl', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centreness-log'), 
+            'fork_channels': (3, 2)
+        }), 
+        5: get_experiment_dict({
+            'name' : 'f6,2_z-1_z-2_y-1_y-2_x-1_x-2_m_cl', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'x-1', 'x-2', 'mask', 'centreness-log'),
+            'fork_channels': (6, 2) 
+        }), 
+        6: get_experiment_dict({
+            'name' : 'f8,2_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_m_cl', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'mask', 'centreness-log'), 
+            'fork_channels': (8, 2)
+        })
+}
+
+# the following is an experiment with different something that approximates cirriculum learning
+cirriculum_exp = {
         0: get_experiment_dict({
-            'name' : 'EWBCE_1_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
-            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log'), 
+            'name' : 'EWBCE_uw0123_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_m_cl', 
+            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'mask', 'centreness-log'), 
             'loss_function' : 'EpochWeightedBCE', 
             'chan_weights' : [
                 [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
                 [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
-                [3., 1., 3., 2., 1., 3., 2., 1., 1., 3.],
-                [3., 1., 3., 2., 1., 3., 2., 1., 1., 3.]
+                [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
+                [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.]
             ]
-        })
-    }
-    cirriculum_exp2 = {
-        # graded cirriculum
-        0: get_experiment_dict({
-            'name' : 'EWBCE_2_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
-            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log'), 
+        }),
+        # some cirriculum
+        1: get_experiment_dict({
+            'name' : 'EWBCE_uw012-w3_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_m_cl', 
+            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'mask', 'centreness-log'), 
+            'loss_function' : 'EpochWeightedBCE', 
+            'chan_weights' : [
+                [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
+                [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
+                [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
+                [3., 1., 3., 2., 1., 3., 2., 1., 2., 2.]
+            ]
+        }),
+        2: get_experiment_dict({
+            'name' : 'EWBCE_uw01-w23_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_m_cl', 
+            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'mask', 'centreness-log'), 
             'loss_function' : 'EpochWeightedBCE', 
             'chan_weights' : [
                 [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
@@ -138,46 +194,188 @@ if __name__ == '__main__':
                 [3., 1., 3., 2., 1., 3., 2., 1., 2., 2.],
                 [3., 1., 3., 2., 1., 3., 2., 1., 2., 2.]
             ]
-        })
+        }),
+        3: get_experiment_dict({
+            'name' : 'EWBCE_uw0-w123_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_m_cl', 
+            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'mask', 'centreness-log'), 
+            'loss_function' : 'EpochWeightedBCE', 
+            'chan_weights' : [
+                [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
+                [3., 1., 3., 2., 1., 3., 2., 1., 2., 2.],
+                [3., 1., 3., 2., 1., 3., 2., 1., 2., 2.],
+                [3., 1., 3., 2., 1., 3., 2., 1., 2., 2.]
+            ]
+        }),
     }
-    # the following is an experiment with different forms of cirriculum learning 
-    cirriculum_exp = {
-        # moderate cirriculum
+
+
+cirriculum_exp_0 = {
         0: get_experiment_dict({
-            'name' : 'EWBCE_0_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
-            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log'), 
+            'name' : 'EWBCE_uw0123_z-1_z-2_y-1_y-2_x-1_x-2_m_cl', 
+            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'x-1', 'x-2','mask', 'centreness-log'), 
             'loss_function' : 'EpochWeightedBCE', 
             'chan_weights' : [
-                [0., 3., 0., 1., 2., 0., 1., 2., 2., 1.],
-                [1., 2., 1., 1., 1., 1., 1., 1., 2., 1.],
-                [2., 1., 2., 1., 0., 2., 1., 0., 1., 2.],
-                [3., 0., 3., 0., 0., 3., 0., 0., 0., 3.]
+                [2., 2., 2., 2., 2., 2., 2., 2.],
+                [2., 2., 2., 2., 2., 2., 2., 2.],
+                [2., 2., 2., 2., 2., 2., 2., 2.],
+                [2., 2., 2., 2., 2., 2., 2., 2.]
             ]
         }),
-        # most extreme cirriculum
+        # some cirriculum
         1: get_experiment_dict({
-            'name' : 'EWBCE_1_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
-            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log'), 
+            'name' : 'EWBCE_uw012-w3_z-1_z-2_y-1_y-2_x-1_x-2_m_cl', 
+            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'x-1', 'x-2','mask', 'centreness-log'), 
             'loss_function' : 'EpochWeightedBCE', 
             'chan_weights' : [
-                [0., 3., 0., 0., 3., 0., 0., 3., 3., 0.],
-                [1., 2., 0., 1., 2., 0., 1., 2., 2., 1.],
-                [2., 1., 2., 1., 0., 2., 1., 0., 1., 2.],
-                [3., 0., 3., 0., 0., 3., 0., 0., 0., 3.]
+                [2., 2., 2., 2., 2., 2., 2., 2.],
+                [2., 2., 2., 2., 2., 2., 2., 2.],
+                [2., 2., 2., 2., 2., 2., 2., 2.],
+                [3., 1., 3., 1., 3., 1., 2., 2.]
             ]
         }),
-        # Most gradual cirriculum
         2: get_experiment_dict({
-            'name' : 'EWBCE_1_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
-            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log'), 
+            'name' : 'EWBCE_uw01-w23_z-1_z-2_y-1_y-2_x-1_x-2_m_cl', 
+            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'x-1', 'x-2','mask', 'centreness-log'), 
             'loss_function' : 'EpochWeightedBCE', 
             'chan_weights' : [
-                [1., 2., 0., 1., 2., 0., 1., 2., 2., 1.],
-                [1., 2., 1., 1., 1., 1., 1., 1., 2., 1.],
-                [2., 1., 1., 1., 1., 1., 1., 1., 1., 2.],
-                [2., 1., 2., 1., 0., 2., 1., 0., 1., 2.]
+                [2., 2., 2., 2., 2., 2., 2., 2.],
+                [2., 2., 2., 2., 2., 2., 2., 2.],
+                [3., 1., 3., 1., 3., 1., 2., 2.],
+                [3., 1., 3., 1., 3., 1., 2., 2.]
             ]
         }),
+        3: get_experiment_dict({
+            'name' : 'EWBCE_uw0-w123_z-1_z-2_y-1_y-2_x-1_x-2_m_cl', 
+            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'x-1', 'x-2','mask', 'centreness-log'), 
+            'loss_function' : 'EpochWeightedBCE', 
+            'chan_weights' : [
+                [2., 2., 2., 2., 2., 2., 2., 2.],
+                [3., 1., 3., 1., 3., 1., 2., 2.],
+                [3., 1., 3., 1., 3., 1., 2., 2.],
+                [3., 1., 3., 1., 3., 1., 2., 2.]
+            ]
+        }),
+    }
+
+
+thresh_exp = {
+    0: get_experiment_dict({
+            'name' : 'thresh_z-1_y-1_x-1_c_cl', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'centreness', 'centreness-log'), 
+        }),
+    1: get_experiment_dict({
+            'name' : 'thresh_z-1_y-1_x-1_m_cl', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centreness-log'), 
+        }),
+}
+
+thresh_exp_0 = {
+    0: get_experiment_dict({
+            'name' : 'thresh_z-1_y-1_x-1_c_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'centreness', 'centroid-gauss'), 
+        }),
+    1: get_experiment_dict({
+            'name' : 'thresh_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'), 
+        }),
+}
+
+seed_exp = {
+    0: get_experiment_dict({
+            'name' : 'seed_z-1_y-1_x-1_m_c', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centreness'), 
+        }),
+    1: get_experiment_dict({
+            'name' : 'seed_z-1_y-1_x-1_m_cl', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centreness-log'), 
+        }),
+    2: get_experiment_dict({
+            'name' : 'seed_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'), 
+        }),
+}
+
+
+affinities_exp_2 = {
+    0: get_experiment_dict({
+            'name' : 'aff_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss')
+        }), 
+    1: get_experiment_dict({
+            'name' : 'aff_z-1_z-2_y-1_y-2_x-1_x-2_m_centg', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'x-1', 'x-2', 'mask', 'centroid-gauss')
+        }), 
+    2: get_experiment_dict({
+            'name' : 'aff_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_m_centg', 
+            'channels' : ('z-1', 'z-2', 'y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'mask', 'centroid-gauss')
+        })
+}
+
+lsr_exp = {
+    0: get_experiment_dict({
+            'name' : 'lsr_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss')
+        }), 
+    1: get_experiment_dict({
+            'name' : 'lsr_z-1s_y-1s_x-1s_m_centg', 
+            'channels' : ('z-1-smooth', 'y-1-smooth', 'x-1-smooth', 'mask', 'centroid-gauss')
+        }), 
+}
+
+lsr_exp_mse = {
+    0: get_experiment_dict({
+            'name' : 'lsr-mse_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'),
+            'loss_function' : 'MSELoss'
+        }), 
+    1: get_experiment_dict({
+            'name' : 'lsr-mse_z-1s_y-1s_x-1s_m_centg', 
+            'channels' : ('z-1-smooth', 'y-1-smooth', 'x-1-smooth', 'mask', 'centroid-gauss'),
+            'loss_function' : 'MSELoss'
+        }), 
+}
+
+
+
+loss_exp = {
+    0: get_experiment_dict({
+            'name' : 'loss-BCE_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'),
+            'loss_function' : 'BCELoss'
+        }),
+    1: get_experiment_dict({
+            'name' : 'loss-DICE_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'),
+            'loss_function' : 'DiceLoss'
+        }),
+   # 2: get_experiment_dict({
+    #        'name' : 'loss-DICE_z-1_y-1_x-1_m_centg', 
+    #        'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'),
+    #        'loss_function' : 'MSELoss'
+    #    })
+}
+
+lr_exp = {
+    0: get_experiment_dict({
+            'name' : 'lr-05_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'),
+            'lr' : 0.05
+        }),
+    1: get_experiment_dict({
+            'name' : 'lr-01_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'),
+            'lr' : 0.01
+        }),
+    2: get_experiment_dict({
+            'name' : 'lr-005_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'),
+            'lr' : 0.005
+        }),
+}
+
+if __name__ == '__main__':
+    # the following is an experiment with different forms of cirriculum learning 
+    weighted_exp = {
         # the following simply cuts to the chase and weighs harder tasks as more important
         3: get_experiment_dict({
             'name' : 'WBCE_1_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
@@ -191,20 +389,6 @@ if __name__ == '__main__':
             'loss_function' : 'WeightedBCE', 
             'chan_weights' : [1., 1., 1., 1., 1., 1., 1., 1., 1., 1.] # note / 10 
         })   
-    }
-    forked_exp = {
-        0: get_experiment_dict({
-            'name' : 'EWBCE_2F_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl', 
-            'channels' : ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log'), 
-            'loss_function' : 'EpochWeightedBCE', 
-            'chan_weights' : [
-                [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
-                [2., 2., 2., 2., 2., 2., 2., 2., 2., 2.],
-                [3., 1., 3., 2., 1., 3., 2., 1., 2., 2.],
-                [3., 1., 3., 2., 1., 3., 2., 1., 2., 2.]
-            ], 
-            'fork_channels' : (8, 2)
-        })
     }
 
     offsets_experiment = {
@@ -237,6 +421,42 @@ if __name__ == '__main__':
         })
     }
 
+    offsets_experiment_2 = {
+        0 : get_experiment_dict({
+            'name' : 'BCE_z-1_y-1_x-1_oz_oy_ox_m', 
+            'channels' : ('z-1', 'y-1','x-1', 'offsets-z', 'offsets-y', 'offsets-x', 'mask'), 
+        }), 
+        1 : get_experiment_dict({
+            'name' : 'f6,1_BCE_z-1_y-1_x-1_oz_oy_ox_m', 
+            'channels' : ('z-1', 'y-1','x-1', 'offsets-z', 'offsets-y', 'offsets-x', 'mask'), 
+            'fork_channels' : (6, 1)
+        }), 
+        2 : get_experiment_dict({
+            'name' : 'f3,4_BCE_z-1_y-1_x-1_oz_oy_ox_m', 
+            'channels' : ('z-1', 'y-1','x-1', 'offsets-z', 'offsets-y', 'offsets-x', 'mask'), 
+            'fork_channels' : (3, 4)
+        }),
+        3 : get_experiment_dict({
+            'name' : 'BCE_oz_oy_ox_m', 
+            'channels' : ('offsets-z', 'offsets-y', 'offsets-x', 'mask'), 
+        }),
+        4 : get_experiment_dict({
+            'name' : 'f3,1_BCE_oz_oy_ox_m', 
+            'channels' : ('offsets-z', 'offsets-y', 'offsets-x', 'mask'), 
+            'fork_channels' : (3, 1)
+        }),
+    }
+
+    offsets_experiment_3 = {
+        0 : get_experiment_dict({
+            'name' : 'cw3MSE,1BCE_oz_oy_ox_m', 
+            'channels' : ('offsets-z', 'offsets-y', 'offsets-x', 'mask'), 
+            'loss_function' : 'Channelwise',
+            'losses' : [nn.MSELoss(), nn.BCELoss()], 
+            'chan_losses' : [slice(0, 3), slice(3, None)], 
+        }),
+    }
+
     # Directory for training data and network output 
     # data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
     # Directory for training data and network output 
@@ -246,15 +466,44 @@ if __name__ == '__main__':
     # Path for GT labels volumes
     labels_paths = [os.path.join(data_dir, '191113_IVMTR26_I3_E3_t58_cang_training_labels.zarr')]
     # Run the experiments
-    #run_experiment(experiments, image_paths, labels_paths, data_dir)
-    #run_experiment(cirriculum_exp2, image_paths, labels_paths, data_dir)
-    #run_experiment(forked_exp, image_paths, labels_paths, data_dir)
-    #run_experiment(offsets_experiment, image_paths, labels_paths, data_dir)
+    # there were others but they weren't used and the code is probs gone --_()_--
 
     # 20th April 2021 - DL machine
     #run_experiment(forked_exp, image_paths, labels_paths, data_dir)
     #run_experiment(affinities_exp, image_paths, labels_paths, data_dir)
     
     # 26th April 2021 - Macbook pro
-    run_experiment(offsets_experiment_1, image_paths, labels_paths, data_dir)
+    #run_experiment(offsets_experiment_1, image_paths, labels_paths, data_dir)
 
+    # 30th April
+    #run_experiment(offsets_experiment_2, image_paths, labels_paths, data_dir)
+    #run_experiment(offsets_experiment_3, image_paths, labels_paths, data_dir)
+
+    # 3rd May 2021 - DL machine
+    #run_experiment(affinities_exp, image_paths, labels_paths, data_dir) # fixed data normalisation
+    #run_experiment(affinities_exp_0, image_paths, labels_paths, data_dir) # rerun last two - mixed up names
+    #run_experiment(forked_exp, image_paths, labels_paths, data_dir) # fixed forked unet
+    #run_experiment(mask_exp, image_paths, labels_paths, data_dir) # added mask
+
+    # 5th May 2021 - DL machine
+    #run_experiment(cirriculum_exp, image_paths, labels_paths, data_dir)
+    #run_experiment(thresh_exp, image_paths, labels_paths, data_dir)
+    #run_experiment(seed_exp, image_paths, labels_paths, data_dir)
+
+    # 6th May 2021 - DL machine
+    #run_experiment(cirriculum_exp_0, image_paths, labels_paths, data_dir)
+    #run_experiment(affinities_exp_2, image_paths, labels_paths, data_dir)
+    #run_experiment(lsr_exp, image_paths, labels_paths, data_dir)
+
+    # 7th May 2021 - DL machine
+    #run_experiment(thresh_exp_0, image_paths, labels_paths, data_dir)
+
+    # 12th May 2021 - DL machine
+    #run_experiment(lr_exp, image_paths, labels_paths, data_dir)
+    run_experiment(loss_exp, image_paths, labels_paths, data_dir)
+    # rerun & make sure using BCE loss
+    #run_experiment(lsr_exp, image_paths, labels_paths, data_dir)
+    #run_experiment(affinities_exp_2, image_paths, labels_paths, data_dir)
+    #run_experiment(seed_exp, image_paths, labels_paths, data_dir)
+    #run_experiment(thresh_exp_0, image_paths, labels_paths, data_dir) 
+    #run_experiment(lsr_exp_mse, image_paths, labels_paths, data_dir)
