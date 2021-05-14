@@ -73,6 +73,7 @@ def get_train_data(
             write_log(LINE, out_dir)
             write_log(s, out_dir)
         im = zarr.open_array(image_paths[i])
+        im = normalise_data(np.array(im))
         l = zarr.open_array(labels_paths[i])
         if i == 0:
             xs, ys, ids = get_random_chunks(im, l, 
@@ -169,7 +170,7 @@ def get_random_chunks(
             s_ = [slice(dim_randints[j], dim_randints[j] + shape[j]) for j in range(len(shape))]
             s_ = tuple(s_)
             x = im[s_]
-            x = normalise_data(x)
+            #x = normalise_data(x)
             # get the GT labels so that later quatitative comparison can be made with final
             #   segmentation  
             lab = l[s_] # that's right, be confused by my variable names!!
@@ -246,6 +247,8 @@ def get_training_labels(
         elif chan.startswith('offsets-'):
             a = _offset_channel(chan)
             lab = offsets[a]
+        elif chan == 'mask':
+            lab = get_semantic_labels(l)
         else:
             m = f'Unrecognised channel type: {chan} \n'
             m = m + 'Please enter str of form <axis>-<n> for nth affinity (e.g., z-1), \n'
@@ -464,6 +467,16 @@ def centre_offsets(c, mask, scale, axes=3):
     return indices, distances
 
 
+
+# ---------------
+# Semantic Labels
+# ---------------
+
+def get_semantic_labels(labels):
+    out = np.where(labels > 1, 1., 0.)
+    return out
+
+
 # ------------------
 # Smoothed Centroids
 # ------------------
@@ -525,6 +538,8 @@ def print_labels_info(channels, out_dir=None, log_name='log.txt'):
         elif chan.startswith('offsets'):
             a = chan[-1]
             n = f'{a}-axis centre offsets'
+        elif chan == 'mask':
+            n = 'object mask'
         else:
             n = 'Unknown channel type'
         s = f'Channel {i}: {n}'
