@@ -13,6 +13,10 @@ from skimage.measure import regionprops
 from skimage.metrics import variation_of_information
 from watershed import watershed
 from time import time
+import cv2
+from skimage.util import img_as_ubyte
+from skimage.segmentation import watershed as skim_watershed
+import scipy.ndimage as ndi
 
 
 # --------------------------------
@@ -30,9 +34,11 @@ def segment_from_directory(
         compactness=0.,
         display=True, 
         validation=False, 
+        dog_config=None,
         **kwargs
         #
     ):
+    dog_comp = dog_config is not None
     images, _, output, GT = get_dataset(directory, 
                                         GT=True, 
                                         validation=validation)
@@ -41,6 +47,10 @@ def segment_from_directory(
     segmentations = []
     masks = []
     scores = {'GT | Output' : [], 'Output | GT' : []}
+    if dog_comp:
+        dog_segs = []
+        dog_masks = []
+        dog_scores = {'GT | Output' : [], 'Output | GT' : []}
     for i in range(output.shape[0]):
         gt = GT[i].compute()
         seg, _, mask = segment_output_image(
@@ -56,20 +66,41 @@ def segment_from_directory(
         seg = da.from_array(seg)
         segmentations.append(seg)
         masks.append(mask)
+        if dog_comp:
+            dog_seg, dog_mask = dog_segmentation(images[i], dog_config)
+            dog_vi = variation_of_information(gt, dog_seg)
+            dog_scores['GT | Output'].append(dog_vi[0])
+            dog_scores['Output | GT'].append(dog_vi[1])
+            dog_seg = da.from_array(dog_seg)
+            dog_segs.append(dog_seg)
+            dog_masks.append(dog_mask)
     segmentations = da.stack(segmentations)
     masks = da.stack(masks)
+    if dog_comp:
+        dog_segs = da.stack(dog_segs)
+        dog_masks = da.stack(dog_masks)
     # Save the VI data
     scores = pd.DataFrame(scores)
+    if dog_comp:
+        dog_scores = pd.DataFrame(dog_scores)
     if validation:
-        s = 'validation_VI.csv'
+        s = 'validation_VI'
     else:
-        s = '_VI.csv'
-    s_path = os.path.join(directory, suffix + s)
+        s = '_VI'
+    s_path = os.path.join(directory, suffix + s + '.csv')
     scores.to_csv(s_path)
+    if dog_comp:
+        d_path = os.path.join(directory, suffix + s + '_DOG-seg' + '.csv')
+        dog_scores.to_csv(d_path)
     gt_o = scores['GT | Output'].mean()
     o_gt = scores['Output | GT'].mean()
     print(f'Conditional entropy H(GT|Output): {gt_o}')
     print(f'Conditional entropy H(Output|GT): {o_gt}')
+    if dog_comp:
+        d_gt_o = dog_scores['GT | Output'].mean()
+        d_o_gt = dog_scores['Output | GT'].mean()
+        print(f'DoG segmentation - Conditional entropy H(GT|Output): {d_gt_o}')
+        print(f'DoG segmentation - Conditional entropy H(Output|GT): {d_o_gt}')
     if display:
         # Now Display
         z_affs = output[:, affinities_channels[0], ...]
@@ -94,6 +125,13 @@ def segment_from_directory(
         v.add_labels(GT, name='Ground truth', blending='additive', visible=False, scale=v_scale)
         v.add_labels(segmentations, name='Segmentations', blending='additive', visible=True, 
                      scale=v_scale)
+        if dog_comp:
+            v.add_labels(dog_masks, name='DoG Masks', 
+                         blending='additive', visible=False, 
+                         scale=v_scale)
+            v.add_labels(dog_segs, name='DoG Segmentations', 
+                         blending='additive', visible=True, 
+                         scale=v_scale)
         napari.run()
 
 
@@ -107,7 +145,8 @@ def segment_output_image(
         centroids_channel, 
         thresholding_channel, 
         scale=None, 
-        compactness=0.
+        compactness=0., 
+        absolute_thresh=None
     ):
     '''
     Parameters
@@ -146,17 +185,23 @@ def segment_output_image(
     # Get the image for finding the mask 
     masking_img = unet_output[thresholding_channel]
     # find the mask for use with watershed
-    mask = _get_mask(masking_img)
+    if absolute_thresh is None:
+        mask = _get_mask(masking_img)
+    else:
+        mask = masking_img > absolute_thresh
     mask = np.pad(mask, 1, constant_values=0) # edge voxels must be 0
     mask, centroids = _remove_unwanted_objects(mask, centroids, min_area=10, max_area=10000)
-    # affinity-based watershed
-    segmentation = watershed(affinties, centroids, mask, 
+    if centroids.shape[0] != 0:
+        # affinity-based watershed
+        segmentation = watershed(affinties, centroids, mask, 
                              affinities=True, scale=scale, 
                              compactness=compactness)
-    segmentation = segmentation[1:-1, 1:-1, 1:-1]
-    segmentation = segmentation.astype(int)
+        segmentation = segmentation[1:-1, 1:-1, 1:-1]
+        segmentation = segmentation.astype(int)
+        print(f'Obtained segmentation in {time() - t} seconds')
+    else:
+        segmentation = np.zeros(mask[1:-1, 1:-1, 1:-1].shape, dtype=int)
     seeds = centroids - 1
-    print(f'Obtained segmentation in {time() - t} seconds')
     return segmentation, seeds, mask
 
 
@@ -212,18 +257,18 @@ def convert_axial_offsets(output, chan_axis=1, zyx_chans=(3, 4, 5)):
     y = output[ys]
     x = output[xs]
     if isinstance(output, Array):
-        z = z.compute()
-        y = y.compute()
-        x = x.compute()
+        z = (z.compute() - 0.5) * 2
+        y = (y.compute() - 0.5) * 2
+        x = (x.compute() - 0.5) * 2
     # get the combined score (l2 norm)
     c = np.sqrt((z**2 + y**2 + x**2))
     # get the new output array
-    new_shape = output.shape
+    new_shape = np.array(output.shape)
     new_shape[chan_axis] = new_shape[chan_axis] - 2
     new = np.zeros(new_shape, dtype=output.dtype)
     # get the slice to take other data from output
     s_ = [slice(None, None)] * output.ndim
-    s_[chan_axis] = [i for i in range(output[chan_axis]) if i not in zyx_chans]
+    s_[chan_axis] = [i for i in range(output.shape[chan_axis]) if i not in zyx_chans]
     s_ = tuple(s_)
     # get the slice to put other data into new
     ns_ = [slice(None, None)] * len(new_shape)
@@ -236,22 +281,68 @@ def convert_axial_offsets(output, chan_axis=1, zyx_chans=(3, 4, 5)):
     ns_[chan_axis] = slice(-1, None)
     ns_ = tuple(ns_)
     # add the centre scores
-    new[ns_] = c
+    new[ns_] = np.expand_dims(c, 1)
     if isinstance(output, Array):
         new = da.array(new)
     return new
 
 
+# ----------------
+# DoG Segmentation
+# ----------------
+
+# Directly based on fl.py --- serialised version -- not my creation
+
+
+def denoise(image):
+    res_im = cv2.fastNlMeansDenoising(image, None, 6, 7, 20)
+    return res_im
+
+
+def dog_func(image, conf):
+    s1 = conf['dog_sigma1']
+    s2 = conf['dog_sigma2']
+    image_dog = cv2.GaussianBlur(image.astype('float'),(0,0), s1) - cv2.GaussianBlur(image.astype('float'), (0,0), s2)
+    return image_dog
+
+
+def dog_segmentation(vol, conf):
+    # denoise
+    vol = img_as_ubyte(vol)
+    print(vol.shape)
+    vlist = [vol[i, ...] for i in range(vol.shape[0])]
+    v_dn = [denoise(im) for im in vlist]
+    v_dn = np.stack(v_dn, axis=0)
+    v_dn = img_as_ubyte(v_dn)
+    # dog volume
+    vlist = [v_dn[i, ...] for i in range(v_dn.shape[0])]
+    v_dog = [dog_func(im, conf) for im in vlist]
+    v_dog = np.stack(v_dog, axis=0)
+    # threshold
+    v_dog_thr = v_dog > conf['threshold']
+    v_dog_thr = img_as_ubyte(v_dog_thr)
+    # seeds for watershed
+    local_maxi = peak_local_max(v_dog, 
+                                indices=False, 
+                                min_distance=conf['peak_min_dist'], 
+                                labels=v_dog_thr)
+    markers, num_objects = ndi.label(local_maxi, structure=np.ones((3,3,3)))
+    # watershed
+    v_labels = skim_watershed(-v_dog, markers, mask=v_dog_thr,compactness=1)
+    return v_labels, v_dog_thr
+
+
 if __name__ == '__main__':
     import os
-    data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
-    train_dir = os.path.join(data_dir, '210416_161026_EWBCE_2F_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl')
-    channels = ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log')
+    #data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
+    data_dir = '/home/abigail/data/platelet-segmentation-training'
+    train_dir = os.path.join(data_dir, '210505_181203_seed_z-1_y-1_x-1_m_centg')
+    channels = ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss')
     images, labs, output = get_dataset(train_dir)
     #o88 = output[88]
-    aff_chans = (0, 2, 5)
-    cent_chan = 9
-    mask_chan = 8
+    aff_chans = (0, 1, 2)
+    cent_chan = 4
+    mask_chan = 3
     #seg88, s88 = segment_output_image(o88, aff_chans, cent_chan, mask_chan) #, scale=(4, 1, 1))
     #seg88s, s88s = segment_output_image(o88, aff_chans, cent_chan, mask_chan, scale=(4, 1, 1))
     #seg88c, s88c = segment_output_image(o88, aff_chans, cent_chan, mask_chan, compactness=0.5) #, scale=(4, 1, 1))
@@ -279,12 +370,13 @@ if __name__ == '__main__':
 
     segment_from_directory(
         train_dir, 
-        'EWBCE_2F_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl',
+        'seed_z-1_y-1_x-1_m_centg',
         aff_chans, 
         cent_chan, 
         mask_chan, 
         scale = (4, 1, 1),
         w_scale=None, 
         compactness=0.,
-        display=True)
+        display=True, 
+        validation=True)
 

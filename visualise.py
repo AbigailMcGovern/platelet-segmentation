@@ -116,7 +116,7 @@ def view_output(train_dir, channels, scale, out_dir=None, verbose=True):
         lab_offsets[-3:] = labs_channels_dict[chan]['offsets']
         lc = labs_channels_dict[chan]['colour']
         # add to viewer according to content
-        if chan == 'centreness':
+        if chan.startswith('cent') or chan == 'mask':
             v.add_image(output, name=output_name, scale=output_scale, visible=False, 
                         colormap=oc, translate=output_offsets, blending='additive')
             v.add_image(lab, name=name, scale=lab_scale, visible=False, 
@@ -130,7 +130,7 @@ def view_output(train_dir, channels, scale, out_dir=None, verbose=True):
             v.add_image(output, name=output_name, scale=output_scale, 
                         colormap=oc, translate=output_offsets, visible=True, 
                         blending='additive')
-            v.add_labels(lab, name=name, scale=lab_scale, visible=False, 
+            v.add_image(lab, name=name, scale=lab_scale, visible=False, colormap=oc,
                          translate=lab_offsets, blending='additive')
         if verbose:
             print(f'Added empty output data with shape {output.shape} to {output_name}')
@@ -151,8 +151,10 @@ def get_empty_output(ys):
 
 
 def prep_channels(dask_stack, channels, scale=(4, 1, 1), gaussian=False, **kwargs):
-    channels_dict = _empty_channels_dict(scale=scale)
+    channels_dict = _empty_channels_dict(channels, scale=scale)
     aff_pattern = re.compile(r'-\d+')
+    print(dask_stack.shape)
+    print(channels)
     if 'centreness-log' in channels:
         use_log = True
     for i, c in enumerate(channels):
@@ -185,13 +187,24 @@ def prep_channels(dask_stack, channels, scale=(4, 1, 1), gaussian=False, **kwarg
             channels_dict['centreness-log']['idx'].append(i)
             centroids = _centroids(cent, gaussian)
             channels_dict['centroids']['data'] = centroids
+        elif c == 'centroid-gauss':
+            cent = dask_stack[:, i, ...]
+            channels_dict['centroid-gauss']['data'].append(cent)
+            channels_dict['centroid-gauss']['idx'].append(i)
+        elif c == 'mask':
+            cent = dask_stack[:, i, ...]
+            channels_dict['mask']['data'].append(cent)
+            channels_dict['mask']['idx'].append(i)
     for chan in channels_dict.keys():
         if chan != 'centroids':
+            print(chan)
+            print(len(channels_dict[chan]['data']))
+            print(channels_dict[chan]['data'][0].shape)
             channels_dict[chan]['data'] = da.stack(channels_dict[chan]['data'], axis=1)
     return channels_dict
 
 
-def _empty_channels_dict(scale=(4, 1, 1)):
+def _empty_channels_dict(channels, scale=(4, 1, 1)):
     channels_dict = {
         'z_affinities': {
             'data' : [],
@@ -219,14 +232,14 @@ def _empty_channels_dict(scale=(4, 1, 1)):
             'name' : 'centreness',
             'idx' : [],
             'offsets': [0, 0, 0], 
-            'colour' : 'viridis'
+            'colour' : 'magma'
         },
         'centreness-log': {
             'data' : [],
             'name' : 'log centreness',
             'idx' : [],
             'offsets': [0, 0, 0], 
-            'colour' : 'viridis'
+            'colour' : 'magma'
         },
         'centroids': {
             'data' : [],
@@ -234,8 +247,36 @@ def _empty_channels_dict(scale=(4, 1, 1)):
             'idx' : None,
             'offsets': [0, 0, 0], 
             'colour' : None
+        }, 
+        'centroid-gauss': {
+            'data' : [],
+            'name' : 'smoothed centroids',
+            'idx' : [],
+            'offsets': [0, 0, 0], 
+            'colour' : 'magma'
+        }, 
+        'mask': {
+            'data' : [],
+            'name' : 'semantic mask',
+            'idx' : [],
+            'offsets': [0, 0, 0], 
+            'colour' : 'viridis'
         }
     }
+    names = []
+    for c in channels:
+        if c.startswith('z'):
+            names.append('z_affinities')
+        elif c.startswith('y'):
+            names.append('y_affinities')
+        elif c.startswith('x'):
+            names.append('x_affinities')
+        else:
+            names.append(c)
+    not_in = [key for key in channels_dict.keys() if key not in names]
+    
+    for key in not_in:
+        channels_dict.pop(key)
     return channels_dict
 
 def _centroids(cent, gaussian):
@@ -306,8 +347,9 @@ def update_plot(loss, plot_dict):
 
 if __name__ == '__main__':
     import os
-    data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
-    train_dir = os.path.join(data_dir, '210324_training_0')
-    channels = ('z-1', 'z-2','y-1', 'y-2', 'y-3', 'x-1', 'x-2', 'x-3', 'centreness', 'centreness-log')
+    #data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
+    data_dir = '/home/abigail/data/platelet-segmentation-training'
+    train_dir = os.path.join(data_dir, '210513_105131_loss-BCE_z-1_y-1_x-1_m_centg')
+    channels = ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss')
     scale = (4, 1, 1)
     v = view_output(train_dir, channels, scale)
