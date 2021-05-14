@@ -6,6 +6,7 @@ import numpy as np
 import os
 import pandas as pd
 from scipy.ndimage import label
+from skimage import io
 from skimage.feature import peak_local_max, blob_dog, blob_log
 from skimage.filters import threshold_otsu
 from skimage import filters
@@ -35,13 +36,15 @@ def segment_from_directory(
         display=True, 
         validation=False, 
         dog_config=None,
+        save=False,
         **kwargs
         #
     ):
     dog_comp = dog_config is not None
-    images, _, output, GT = get_dataset(directory, 
+    images, _, output, GT, ids = get_dataset(directory, 
                                         GT=True, 
-                                        validation=validation)
+                                        validation=validation, 
+                                        return_ID=True)
     images = da.squeeze(images)
     print(output.shape)
     segmentations = []
@@ -60,18 +63,26 @@ def segment_from_directory(
                 thresholding_channel, 
                 scale=w_scale, 
                 compactness=0.)
-        vi = variation_of_information(gt, seg)
+        vi = variation_of_information(gt, seg, ignore_labels=0)
         scores['GT | Output'].append(vi[0])
         scores['Output | GT'].append(vi[1])
+        if save:
+            save_name = ids[i] + '_segmentation.tif'
+            save_path = os.path.join(directory, save_name)
+            io.imsave(save_path, seg)
         seg = da.from_array(seg)
         segmentations.append(seg)
         masks.append(mask)
         if dog_comp:
             dog_seg, dog_mask = dog_segmentation(images[i], dog_config)
-            dog_vi = variation_of_information(gt, dog_seg)
+            dog_vi = variation_of_information(gt, dog_seg, ignore_labels=0)
             dog_scores['GT | Output'].append(dog_vi[0])
             dog_scores['Output | GT'].append(dog_vi[1])
             dog_seg = da.from_array(dog_seg)
+            if save:
+                save_name = ids[i] + '_DoG-segmentation.tif'
+                save_path = os.path.join(directory, save_name)
+                io.imsave(save_path, dog_seg)
             dog_segs.append(dog_seg)
             dog_masks.append(dog_mask)
     segmentations = da.stack(segmentations)

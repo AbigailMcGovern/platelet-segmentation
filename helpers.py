@@ -92,7 +92,7 @@ def check_ids_match(x, y, regex=r'\d{6}_\d{6}_\d{1,3}'):
 # Load Output from Training 
 # -------------------------
 
-def get_dataset(train_dir, out_dir=None, GT=False, validation=False):
+def get_dataset(train_dir, out_dir=None, GT=False, validation=False, return_ID=False):
     # directory for output, if none, assume output is with training data
     if out_dir is None:
         out_dir = train_dir
@@ -112,9 +112,15 @@ def get_dataset(train_dir, out_dir=None, GT=False, validation=False):
     images = da.stack([images], axis=1)
     if GT:
         ground_truth = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_GT.tif', ids)
-        return images, labs, output, ground_truth
+        if not return_ID:
+            return images, labs, output, ground_truth
+        else:
+            return images, labs, output, ground_truth, ids
     else:
-        return images, labs, output
+        if not return_ID:
+            return images, labs, output
+        else:
+            return images, labs, output, ids
 
 
 def get_regex_images(data_dir, regex, ids, id_regex=r'\d{6}_\d{6}_\d{1,3}'):

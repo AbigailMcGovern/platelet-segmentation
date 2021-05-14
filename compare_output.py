@@ -140,16 +140,16 @@ def compare_with_DoG(
         thresholding_channel, 
         dog_config
         ):
+    #segment_from_directory(directory, suffix, affinities_channels, 
+                     #       centroids_channel, thresholding_channel, 
+                      #      validation=False, dog_config=dog_config)
     segment_from_directory(directory, suffix, affinities_channels, 
                             centroids_channel, thresholding_channel, 
-                            validation=False, dog_config=dog_config)
-    segment_from_directory(directory, suffix, affinities_channels, 
-                            centroids_channel, thresholding_channel, 
-                            validation=True, dog_config=dog_config)
+                            validation=True, dog_config=dog_config, save=True)
     s = ('validation_VI', '_VI')
     # training data
-    train_path = os.path.join(directory, suffix + s[0] + '.csv')
-    train_path_dog = os.path.join(directory, suffix + s[0] + '_DOG-seg' + '.csv')
+    train_path = os.path.join(directory, suffix + s[1] + '.csv')
+    train_path_dog = os.path.join(directory, suffix + s[1] + '_DOG-seg' + '.csv')
     vi_train_paths = [train_path, train_path_dog]
     vi_train_names = ['DL Segmentation', 'DoG Segmentation']
     experiment_VI_plots(vi_train_paths, 
