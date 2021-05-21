@@ -1,3 +1,4 @@
+from os import path
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -197,6 +198,7 @@ def experiment_VI_plots(
         cond_ent_under="Output | GT", 
         show=True
     ):
+    plt.rcParams.update({'font.size': 16})
     groups = []
     ce0 = []
     ce1 = []
@@ -231,6 +233,65 @@ def experiment_VI_plots(
     if show:
         plt.show()
 
+
+
+# -----------------------
+# Average Precision Plots
+# -----------------------
+
+def plot_experiment_APs(paths, names, title, out_dir, out_name, show=True):
+    dfs = [pd.read_csv(path) for path in paths]
+    out_path = os.path.join(out_dir, out_name)
+    plot_AP(dfs, names, out_path, title, show=show)
+
+
+def plot_AP(dfs, names, out_path, title, thresh_name='threshold', ap_name='average_precision', show=True):
+    plt.rcParams.update({'font.size': 16})
+    plt.rcParams["figure.figsize"] = (10,10)
+    fig = plt.figure()
+    for df in dfs:
+        plt.plot(df[thresh_name].values, df[ap_name].values)
+    plt.xlabel('IoU threshold')
+    plt.ylabel('Average precision')
+    plt.title(title)
+    plt.legend(names)
+    fig.savefig(out_path)
+    if show:
+        plt.show()
+
+
+# ------------------------------
+# Object Number Difference Plots
+# ------------------------------
+
+def plot_experiment_no_diff(paths, names, title, out_dir, out_name, col_name='n_diff', show=True):
+    dfs = [pd.read_csv(path) for path in paths]
+    plt.rcParams.update({'font.size': 16})
+    out_path = os.path.join(out_dir, out_name)
+    groups = []
+    n_diff = []
+    for i, df in enumerate(dfs):
+        vals = df[col_name].values
+        n_diff.append(vals)
+        groups += [names[i]] * len(df)
+    x = 'Experiment'
+    data = {
+        x : groups, 
+        'n_diff' : np.concatenate(n_diff), 
+    }
+    data = pd.DataFrame(data)
+    o = 'h'
+    pal = 'Set2'
+    sigma = .2
+    f, ax = plt.subplots(figsize=(10, 10))
+    pt.RainCloud(x=x, y='n_diff', data=data, palette=pal, bw=sigma,
+                 width_viol=.6, ax=ax, orient=o)
+    plt.title(title)
+    plt.legend(names)
+    f.savefig(out_path)
+    if show:
+        plt.show()
+    
 
 
 if __name__ == '__main__':
