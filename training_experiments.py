@@ -373,6 +373,13 @@ lr_exp = {
         }),
 }
 
+basic = {
+    1: get_experiment_dict({
+            'name' : 'basic_z-1_y-1_x-1_m_centg', 
+            'channels' : ('z-1', 'y-1', 'x-1', 'mask', 'centroid-gauss'), 
+        }),
+}
+
 if __name__ == '__main__':
     # the following is an experiment with different forms of cirriculum learning 
     weighted_exp = {
@@ -500,10 +507,13 @@ if __name__ == '__main__':
 
     # 12th May 2021 - DL machine
     #run_experiment(lr_exp, image_paths, labels_paths, data_dir)
-    run_experiment(loss_exp, image_paths, labels_paths, data_dir)
+    #run_experiment(loss_exp, image_paths, labels_paths, data_dir)
     # rerun & make sure using BCE loss
     #run_experiment(lsr_exp, image_paths, labels_paths, data_dir)
     #run_experiment(affinities_exp_2, image_paths, labels_paths, data_dir)
     #run_experiment(seed_exp, image_paths, labels_paths, data_dir)
     #run_experiment(thresh_exp_0, image_paths, labels_paths, data_dir) 
     #run_experiment(lsr_exp_mse, image_paths, labels_paths, data_dir)
+
+    # Here's an easy way to run the basic training
+    run_experiment(basic, image_paths, labels_paths, data_dir)
