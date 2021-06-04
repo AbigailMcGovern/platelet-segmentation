@@ -1,5 +1,5 @@
 from custom_loss import WeightedBCELoss, DiceLoss, EpochwiseWeightedBCELoss, \
-    channel_losses_to_dict
+    channel_losses_to_dict, ChannelwiseLoss
 from datetime import datetime
 import dask.array as da
 from helpers import LINE, write_log
@@ -44,7 +44,11 @@ def train_unet(
                chan_weights=(1., 2., 2.), # for weighted BCE
                weights=None,
                update_every=20, 
+               losses=None, 
+               chan_losses=None,
+               # network architechture
                fork_channels=None,
+               chan_final_activations=None,
                **kwargs
                ):
     '''
@@ -120,22 +124,26 @@ def train_unet(
     device = torch.device(device_name)
     # initialise U-net
     if fork_channels is None:
-        unet = UNet(out_channels=len(channels)).to(device, dtype=torch.float32)
+        unet = UNet(out_channels=len(channels), 
+                    chan_final_activations=chan_final_activations).to(device, 
+                                                                      dtype=torch.float32)
     else:
-        unet = UNet(out_channels=fork_channels).to(device, dtype=torch.float32)
+        unet = UNet(out_channels=fork_channels, 
+                    chan_final_activations=chan_final_activations).to(device, 
+                                                                      dtype=torch.float32)
     # load weights if applicable 
     weights_are = _load_weights(weights, unet)
     # define the optimiser
     optimiser = optim.Adam(unet.parameters(), lr=lr)
     # define the loss function
-    loss = _get_loss_function(loss_function, chan_weights, device)
+    loss = _get_loss_function(loss_function, chan_weights, device, losses, chan_losses)
     # get the dictionary that will be converted to a csv of losses
     #   contains columns for each channel, as we record channel-wise
     #   BCE loss in addition to the loss used for backprop
     channels = _index_channels_if_none(channels, xs) 
     loss_dict = _get_loss_dict(channels)
     if validate:
-        v_loss = _get_loss_function(loss_function, chan_weights, device)
+        v_loss = _get_loss_function(loss_function, chan_weights, device, losses, chan_losses)
         validation_dict = {'epoch' : [], 
                            'validation_loss' : [], 
                            'data_id' : [], 
@@ -147,7 +155,8 @@ def train_unet(
     # print the training into and log if applicable 
     bce_weights = _bce_weights(loss) # gets weights if using WeightedBCE
     _print_train_info(loss_function, bce_weights, epochs, lr, 
-                     weights_are, device_name, out_dir, log)
+                      weights_are, device_name, out_dir, log, 
+                      chan_losses, losses, channels, fork_channels)
     # loop over training data 
     y_hats, v_y_hats = _train_loop(no_iter, epochs, xs, ys, ids, device, unet, 
                                    out_dir, optimiser, loss, loss_dict,  
@@ -170,7 +179,8 @@ def _plots(out_dir, suffix, loss_function, validate):
 
 
 
-def _get_loss_function(loss_function, chan_weights, device):
+def _get_loss_function(loss_function, chan_weights, device, 
+                       losses, chan_losses):
     # define the loss function
     if loss_function == 'BCELoss':
         loss = nn.BCELoss()
@@ -182,6 +192,10 @@ def _get_loss_function(loss_function, chan_weights, device):
        # loss = BCELossWithCentrenessPenalty()
     elif loss_function == 'EpochWeightedBCE':
         loss = EpochwiseWeightedBCELoss(weights_list=chan_weights, device=device)
+    elif loss_function == 'Channelwise':
+        loss = ChannelwiseLoss(losses, chan_losses, device)
+    elif loss_function == 'MSELoss':
+        loss = nn.MSELoss()
     else:
         m = 'Valid loss options are BCELoss, WeightedBCE, and DiceLoss'
         raise ValueError(m)
@@ -224,15 +238,30 @@ def _bce_weights(loss):
 
 
 def _print_train_info(loss_function, bce_weights, epochs, lr, 
-                     weights_are, device_name, out_dir, log):
+                     weights_are, device_name, out_dir, log, 
+                     chan_losses, losses, channels, fork_channels):
     s = LINE + '\n' + f'Loss function: {loss_function} \n'
     if bce_weights is not None:
-        s = s + f'Loss function channel weights: {bce_weights} \n'
+        s = s + f'    Loss function channel weights: {bce_weights} \n'
+    if losses is not None:
+        chan_bd = []
+        for c in chan_losses:
+            if isinstance(c, slice):
+                chan_bd.append(f'[{c.start}, {c.stop})')
+            else:
+                chan_bd.append(str(c))
+        for i, l in enumerate(losses):
+            s = s + f'    Loss for channels {chan_bd[i]}: {l}\n'
     s = s + 'Optimiser: Adam \n' + f'Learning rate: {lr} \n'
     s = s + LINE + '\n' 
     s = s + f'Training {weights_are} U-net for {epochs} '
     s = s + 'epochs with batch size 1 \n'
-    s = s + f'Device: {device_name} \n' + LINE
+    s = s + f'Device: {device_name} \n'
+    if channels is not None:
+        s = s + f'Channels: {channels}\n'
+    if fork_channels is not None:
+        s = s + f'Channels per fork (according to channel order): {fork_channels}\n' 
+    s = s + LINE
     print(s)
     if log:
         write_log(LINE, out_dir)
@@ -305,7 +334,7 @@ def _train_step(i, xs, ys, ids, device, unet, optimiser,
     loss_dict['batch_num'].append(i)
     loss_dict['loss'].append(l.item())
     loss_dict['data_id'].append(ids[i])
-    channel_losses_to_dict(y_hat, y, channels, loss_dict)
+    channel_losses_to_dict(y_hat, y, channels, loss, loss_dict)
     return l
 
 
@@ -540,7 +569,10 @@ def train_unet_get_labels(
                           chan_weights=(1., 2., 2.), # for weighted BCE
                           weights=None,
                           update_every=20,
+                          losses=None, 
+                          chan_losses=None,
                           fork_channels=None,
+                          chan_final_activations=None,
                           **kwargs
                           ):
     '''
@@ -647,13 +679,11 @@ def train_unet_get_labels(
                       chan_weights=chan_weights, # for weighted BCE
                       weights=weights,
                       update_every=update_every, 
-                      fork_channels=fork_channels
+                      fork_channels=fork_channels,
+                      losses=losses, 
+                      chan_losses=chan_losses,
+                      chan_final_activations=chan_final_activations
                       )
     return unet
 
-
-# Another option, but need to build ResBlock :) in unet.py
-
-def train_resunet():
-    pass
 

@@ -73,6 +73,7 @@ def get_train_data(
             write_log(LINE, out_dir)
             write_log(s, out_dir)
         im = zarr.open_array(image_paths[i])
+        im = normalise_data(np.array(im))
         l = zarr.open_array(labels_paths[i])
         if i == 0:
             xs, ys, ids = get_random_chunks(im, l, 
@@ -169,7 +170,7 @@ def get_random_chunks(
             s_ = [slice(dim_randints[j], dim_randints[j] + shape[j]) for j in range(len(shape))]
             s_ = tuple(s_)
             x = im[s_]
-            x = normalise_data(x)
+            #x = normalise_data(x)
             # get the GT labels so that later quatitative comparison can be made with final
             #   segmentation  
             lab = l[s_] # that's right, be confused by my variable names!!
@@ -209,15 +210,21 @@ def _add_to_dataframe(dim, start, df):
         df['x_start'].append(start)
 
 
-# --------------------------
+# -----------------------------------------------------------------------------
 # Lable Generating Functions
-# --------------------------
+# -----------------------------------------------------------------------------
 
 def get_training_labels(
                         l, 
                         channels=('z-1', 'y-1', 'x-1', 'centreness'),
                         scale=(4, 1, 1)):
     labels = []
+    get_offsets = False
+    for chan in channels:
+        if chan.startswith('offsets-'):
+            get_offsets = True
+    if get_offsets:
+        offsets = get_centre_offsets(l, scale)
     for chan in channels:
         if chan.startswith('z'):
             axis = 0
@@ -237,10 +244,16 @@ def get_training_labels(
             lab = get_centreness(l, scale=scale, log=True)
         elif chan == 'centroid-gauss':
             lab = get_gauss_centroids(l)
+        elif chan.startswith('offsets-'):
+            a = _offset_channel(chan)
+            lab = offsets[a]
+        elif chan == 'mask':
+            lab = get_semantic_labels(l)
         else:
             m = f'Unrecognised channel type: {chan} \n'
-            m = m + 'Please enter str of form axis-n for nth affinity \n'
-            m = m + 'or centreness for centreness score.'
+            m = m + 'Please enter str of form <axis>-<n> for nth affinity (e.g., z-1), \n'
+            m = m + 'centreness for centreness score (option of -log for log of centreness),\n'
+            m = m + 'or offset-<axis> (e.g., offset-z) for axis offsets'
             raise ValueError(m)
         if chan.endswith('-smooth'):
             lab = smooth(lab)
@@ -248,6 +261,22 @@ def get_training_labels(
     labels = np.stack(labels, axis=0)
     return labels
 
+
+def _offset_channel(chan):
+    if chan.endswith('z'):
+        a = 0
+    elif chan.endswith('y'):
+        a = 1
+    elif chan.endswith('x'):
+        a = 2
+    else:
+        raise ValueError(f'Incompatible offset axis name: {chan}')
+    return a
+
+
+# ----------
+# Affinities
+# ----------
 
 def nth_affinity(labels, n, axis):
     affinities = []
@@ -271,6 +300,37 @@ def nth_affinity(labels, n, axis):
     affinities = np.where(affinities != 0, 1., 0.)
     return affinities
 
+
+# not currently referenced, uses nth_affinity() for generality
+def get_affinities(image):
+    """
+    Get short-range voxel affinities for a segmentation. Affinities are 
+    belonging to {0, 1} where 1 represents a segment boarder voxel in a
+    particular direction. Affinities are produced for each dimension of 
+    the labels and each dim has its own channel (e.g, (3, z, y, x)). 
+
+    Note
+    ----
+    Others may represent affinities with {-1, 0}, because technically... 
+    My network wasn't designed for this :)
+    """
+    padded = np.pad(image, 1, mode='reflect')
+    affinities = []
+    for i in range(len(image.shape)):
+        a = np.diff(padded, axis=i)
+        a = np.where(a != 0, 1.0, 0.0)
+        a = a.astype(np.float32)
+        s_ = [slice(1, -1)] * len(image.shape)
+        s_[i] = slice(None, -1)
+        s_ = tuple(s_)
+        affinities.append(a[s_])
+    affinities = np.stack(affinities)
+    return affinities    
+
+
+# -----------
+# Centredness
+# -----------
 
 def get_centreness(labels, scale=(4, 1, 1), log=False, power=False):
     """
@@ -337,6 +397,90 @@ def inverse_dist_score(mask, centroid, scale, log, power):
     return indices, values
 
 
+# --------------
+# Centre Offsets
+# --------------
+
+def get_centre_offsets(labels, scale):
+    m = labels > 0
+    m = []
+    scale = np.array(scale)
+    def offsets(mask):
+        shape = np.insert(mask.shape, -3, 3)
+        output = np.zeros(shape, dtype=np.float32) 
+        #print(output.shape)
+        c = np.mean(np.argwhere(mask), axis=0)
+        indices, values = centre_offsets(c, mask, scale)
+        #print(indices, values)
+        output[indices] = values
+        return output
+    t = time()
+    props = regionprops(labels, extra_properties=(offsets,))
+    #new = np.zeros(np.insert(labels.shape, -3, 3), dtype=np.float32)
+    m = labels > 0
+    m = np.stack([m, m.copy(), m.copy()], axis=0)
+    new = np.where(m == 1, 0., 0.5)
+    for i, prop in tqdm(enumerate(props), desc='Get axial centre offsets'):
+        #print(new.shape, prop.offsets.shape, prop.slice)
+        s_ = [slice(None, None), ]
+        for s in prop.slice:
+            s_.append(s)
+        s_ = tuple(s_)
+        new[s_] += prop.offsets
+    new = np.nan_to_num(new)
+    print('------------------------------------------------------------')
+    print(f'Obtained centre offsets in {time() - t} seconds')
+    return new
+
+
+def centre_offsets(c, mask, scale, axes=3):
+    idxs = np.argwhere(mask > 0)
+    indices = []
+    distances = []
+    for a in range(axes):
+        a_distances = []
+        a_indices = []
+        for i in range(idxs.shape[0]):
+            idx = idxs[i, ...]
+            diff = (c - idx) * scale
+            # add indicies and offset
+            a_indices.append(np.insert(idx, 0, a))
+            a_distances.append(diff[a])
+        a_indices = np.array(a_indices)
+        indices.append(a_indices)
+        a_distances = np.array(a_distances)
+        new = []
+        for d in a_distances:
+            if d > 0:
+                new.append((d / a_distances.max()))
+            elif d == 0:
+                new.append(0)
+            elif d < 0:
+                new.append(-(d / a_distances.min()))
+        d = np.array(new)
+        d = d - (-1)
+        d = d / 2
+        distances.append(d)
+    indices = np.concatenate(indices)
+    indices = tuple(indices.T.tolist())
+    distances = np.concatenate(distances)
+    return indices, distances
+
+
+
+# ---------------
+# Semantic Labels
+# ---------------
+
+def get_semantic_labels(labels):
+    out = np.where(labels > 1, 1., 0.)
+    return out
+
+
+# ------------------
+# Smoothed Centroids
+# ------------------
+
 # not used
 def get_gauss_centroids(labels, sigma=1, z=0):
     centroids = [prop['centroid'] for prop in regionprops(labels)]
@@ -369,36 +513,10 @@ def smooth(image, z=0, sigma=1):
     return out
 
 
-# not currently referenced, uses nth_affinity() for generality
-def get_affinities(image):
-    """
-    Get short-range voxel affinities for a segmentation. Affinities are 
-    belonging to {0, 1} where 1 represents a segment boarder voxel in a
-    particular direction. Affinities are produced for each dimension of 
-    the labels and each dim has its own channel (e.g, (3, z, y, x)). 
 
-    Note
-    ----
-    Others may represent affinities with {-1, 0}, because technically... 
-    My network wasn't designed for this :)
-    """
-    padded = np.pad(image, 1, mode='reflect')
-    affinities = []
-    for i in range(len(image.shape)):
-        a = np.diff(padded, axis=i)
-        a = np.where(a != 0, 1.0, 0.0)
-        a = a.astype(np.float32)
-        s_ = [slice(1, -1)] * len(image.shape)
-        s_[i] = slice(None, -1)
-        s_ = tuple(s_)
-        affinities.append(a[s_])
-    affinities = np.stack(affinities)
-    return affinities    
-
-
-# -------------
+# -----------------------------------------------------------------------------
 # Log and Print
-# -------------
+# -----------------------------------------------------------------------------
 
 def print_labels_info(channels, out_dir=None, log_name='log.txt'):
     print(LINE)
@@ -417,6 +535,11 @@ def print_labels_info(channels, out_dir=None, log_name='log.txt'):
             n = 'log centreness score'
         elif chan == 'centroid-gauss':
             n = 'gaussian centroids'
+        elif chan.startswith('offsets'):
+            a = chan[-1]
+            n = f'{a}-axis centre offsets'
+        elif chan == 'mask':
+            n = 'object mask'
         else:
             n = 'Unknown channel type'
         s = f'Channel {i}: {n}'
@@ -425,9 +548,9 @@ def print_labels_info(channels, out_dir=None, log_name='log.txt'):
             write_log(s, out_dir, log_name)
 
 
-# -----------
+# -----------------------------------------------------------------------------
 # Save Output
-# -----------
+# -----------------------------------------------------------------------------
 
 def save_random_chunks(xs, ys, labs, out_dir):
     '''
@@ -464,9 +587,9 @@ def save_random_chunks(xs, ys, labs, out_dir):
     return ids
 
 
-# ---------------
+# -----------------------------------------------------------------------------
 # Load Train Data
-# ---------------
+# -----------------------------------------------------------------------------
 
 def load_train_data(
                     data_dir, 
@@ -559,5 +682,23 @@ def normalise_data(image):
 
 
 if __name__ =="__main__":
-    #
-    pass
+    import zarr
+    import napari
+    # Directory for training data and network output 
+    #data_dir = '/Users/amcg0011/Data/pia-tracking/cang_training'
+    data_dir = '/home/abigail/data/platelet-segmentation-training'
+    # Path for original image volumes for which GT was generated
+    image_paths = [os.path.join(data_dir, '191113_IVMTR26_I3_E3_t58_cang_training_image.zarr')] 
+    # Path for GT labels volumes
+    labels_paths = [os.path.join(data_dir, '191113_IVMTR26_I3_E3_t58_cang_training_labels.zarr')]
+    labs = zarr.open(labels_paths[0])
+    labs = np.array(labs)
+    cent_off = get_centre_offsets(labs, (4, 1, 1))
+    v = napari.Viewer()
+    z = cent_off[0] # - cent_off[0].min()
+    v.add_image(z, name='Z offsets', colormap='bop purple', blending='additive', scale=(4, 1, 1))
+    y = cent_off[1] #- cent_off[1].min()
+    v.add_image(y, name='Y offsets', colormap='bop orange', blending='additive', scale=(4, 1, 1))
+    x = cent_off[2] #- cent_off[2].min()
+    v.add_image(x, name='X offsets', colormap='bop blue', blending='additive', scale=(4, 1, 1))
+    napari.run()

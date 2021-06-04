@@ -1,3 +1,4 @@
+from os import path
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -78,37 +79,58 @@ def plot_channel_losses(df, x_lab='Iteration', y_lab='BCE Loss', save=None, show
     x = df['Unnamed: 0'].values
     non_channel_cols = ['Unnamed: 0', 'epoch', 'batch_num', 'loss', 'data_id']
     channel_losses = [col for col in cols if col not in non_channel_cols]
-    fig, axs = plt.subplots(2, 2)
-    zs, ys, xs, cs = [], [], [], []
-    for col in channel_losses:
-        y = df[col].values
-        if col.startswith('z'):
-            ls = _get_linestyle(zs)
-            axs[0, 0].plot(x, y, linewidth=1, linestyle=ls)
-            zs.append(col)
-        if col.startswith('y'):
-            ls = _get_linestyle(ys)
-            axs[0, 1].plot(x, y, linewidth=1, linestyle=ls)
-            ys.append(col)
-        if col.startswith('x'):
-            ls = _get_linestyle(xs)
-            axs[1, 0].plot(x, y, linewidth=1, linestyle=ls)
-            xs.append(col)
-        if col.startswith('centre'):
-            ls = _get_linestyle(cs)
-            axs[1, 1].plot(x, y, linewidth=1, linestyle=ls)
-            cs.append(col)
-    axs[0, 0].set_title('Z affinities losses')
-    axs[0, 0].legend(zs)
-    axs[0, 1].set_title('Y affinities losses')
-    axs[0, 1].legend(ys)
-    axs[1, 0].set_title('X affinities losses')
-    axs[1, 0].legend(xs)
-    axs[1, 1].set_title('Centreness losses')
-    axs[1, 1].legend(cs)
+    #print(channel_losses)
+    if len(channel_losses) > 5:
+        #print('four plots')
+        fig, axs = plt.subplots(2, 2)
+        zs, ys, xs, cs = [], [], [], []
+        for col in channel_losses:
+            y = df[col].values
+            if col.startswith('z'):
+                ls = _get_linestyle(zs)
+                axs[0, 0].plot(x, y, linewidth=1, linestyle=ls)
+                zs.append(col)
+            if col.startswith('y'):
+                ls = _get_linestyle(ys)
+                axs[0, 1].plot(x, y, linewidth=1, linestyle=ls)
+                ys.append(col)
+            if col.startswith('x'):
+                ls = _get_linestyle(xs)
+                axs[1, 0].plot(x, y, linewidth=1, linestyle=ls)
+                xs.append(col)
+            if col.startswith('cent') or col == 'mask':
+                ls = _get_linestyle(cs)
+                axs[1, 1].plot(x, y, linewidth=1, linestyle=ls)
+                cs.append(col)
+        axs[0, 0].set_title('Z affinities losses')
+        axs[0, 0].legend(zs)
+        axs[0, 1].set_title('Y affinities losses')
+        axs[0, 1].legend(ys)
+        axs[1, 0].set_title('X affinities losses')
+        axs[1, 0].legend(xs)
+        axs[1, 1].set_title('Object interior losses')
+        axs[1, 1].legend(cs)
+        fig.set_size_inches(13, 9)
+    elif len(channel_losses) <= 5:
+        #print('two plots')
+        fig, axs = plt.subplots(2, 1)
+        affs, cs = [], []
+        for col in channel_losses:
+            y = df[col].values
+            if col.startswith('z') or col.startswith('y') or col.startswith('x'):
+                ls = _get_linestyle(affs)
+                axs[0].plot(x, y, linewidth=2, linestyle=ls)
+                affs.append(col)
+            if col.startswith('cent') or col == 'mask':
+                axs[1].plot(x, y, linewidth=2)
+                cs.append(col)
+        axs[0].set_title('Affinities losses')
+        axs[0].legend(affs)
+        axs[1].set_title('Object interior losses')
+        axs[1].legend(cs)
+        fig.set_size_inches(14, 14)
     for ax in axs.flat:
         ax.set(xlabel=x_lab, ylabel=y_lab)
-    fig.set_size_inches(13, 9)
     if save is not None:
         plt.savefig(save, dpi=300)
     if show:
@@ -174,7 +196,9 @@ def experiment_VI_plots(
         out_dir,
         cond_ent_over="GT | Output",  
         cond_ent_under="Output | GT", 
+        show=True
     ):
+    plt.rcParams.update({'font.size': 16})
     groups = []
     ce0 = []
     ce1 = []
@@ -190,34 +214,142 @@ def experiment_VI_plots(
         cond_ent_under : np.concatenate(ce1)
     }
     data = pd.DataFrame(data)
-    f, axs = plt.subplots(1, 2, figsize=(12, 10))
-    ax0 = axs[0, 0]
-    ax1 = axs[0, 1]
     o = 'h'
     pal = 'Set2'
     sigma = .2
+    f, axs = plt.subplots(1, 2, figsize=(14, 10), sharex=True, sharey=True)
+    ax0 = axs[0]
+    ax1 = axs[1]
     pt.RainCloud(x = x, y = cond_ent_over, data = data, palette = pal, bw = sigma,
                  width_viol = .6, ax = ax0, orient = o)
+    ax0.set_title('Over-segmentation conditional entropy')
     pt.RainCloud(x = x, y = cond_ent_under, data = data, palette = pal, bw = sigma,
                  width_viol = .6, ax = ax1, orient = o)
-    plt.title(title)
-    if save:
-        save_path = os.path.join(out_dir, '_VI_rainclould_plots.png')
-        plt.savefig(save_path, bbox_inches='tight')
+    ax1.set_title('Under-segmentation conditional entropy')
+    f.suptitle(title)
+    os.makedirs(out_dir, exist_ok=True)
+    save_path = os.path.join(out_dir, out_name + '_VI_rainclould_plots.png')
+    plt.savefig(save_path, bbox_inches='tight')
     if show:
         plt.show()
 
 
 
+# -----------------------
+# Average Precision Plots
+# -----------------------
+
+def plot_experiment_APs(paths, names, title, out_dir, out_name, show=True):
+    dfs = [pd.read_csv(path) for path in paths]
+    out_path = os.path.join(out_dir, out_name)
+    plot_AP(dfs, names, out_path, title, show=show)
+
+
+def plot_AP(dfs, names, out_path, title, thresh_name='threshold', ap_name='average_precision', show=True):
+    plt.rcParams.update({'font.size': 16})
+    plt.rcParams["figure.figsize"] = (10,10)
+    fig = plt.figure()
+    for df in dfs:
+        plt.plot(df[thresh_name].values, df[ap_name].values)
+    plt.xlabel('IoU threshold')
+    plt.ylabel('Average precision')
+    plt.title(title)
+    plt.legend(names)
+    fig.savefig(out_path)
+    if show:
+        plt.show()
+
+
+# ------------------------------
+# Object Number Difference Plots
+# ------------------------------
+
+def plot_experiment_no_diff(paths, names, title, out_dir, out_name, col_name='n_diff', show=True):
+    dfs = [pd.read_csv(path) for path in paths]
+    plt.rcParams.update({'font.size': 16})
+    out_path = os.path.join(out_dir, out_name)
+    groups = []
+    n_diff = []
+    for i, df in enumerate(dfs):
+        vals = df[col_name].values
+        n_diff.append(vals)
+        groups += [names[i]] * len(df)
+    x = 'Experiment'
+    data = {
+        x : groups, 
+        'n_diff' : np.concatenate(n_diff), 
+    }
+    data = pd.DataFrame(data)
+    o = 'h'
+    pal = 'Set2'
+    sigma = .2
+    f, ax = plt.subplots(figsize=(10, 10))
+    pt.RainCloud(x=x, y='n_diff', data=data, palette=pal, bw=sigma,
+                 width_viol=.6, ax=ax, orient=o)
+    plt.title(title)
+    plt.legend(names)
+    f.savefig(out_path)
+    if show:
+        plt.show()
+    
+
+
 if __name__ == '__main__':
+    import re
     #name = 'loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl.csv'
-    name = 'loss_210401_150158_z-1_y-1_x-1__wBCE2-1-1.csv'
+    #name = 'loss_210401_150158_z-1_y-1_x-1__wBCE2-1-1.csv'
     #dir_ = '/Users/amcg0011/Data/pia-tracking/cang_training/210331_training_0'
-    dir_ = '/Users/amcg0011/Data/pia-tracking/cang_training/210401_150158_z-1_y-1_x-1__wBCE2-1-1'
-    path = os.path.join(dir_, name)
-    save_channel_loss_plot(path)
+    #dir_ = '/Users/amcg0011/Data/pia-tracking/cang_training/210401_150158_z-1_y-1_x-1__wBCE2-1-1'
+    root_dir = '/home/abigail/data/platelet-segmentation-training'
+    pattern = re.compile(r'\d{6}_\d{6}_')
+    loss_pattern = re.compile(r'loss_\d{6}_\d{6}_')
+    val_loss_pattern = re.compile(r'validation-loss_\d{6}_\d{6}_')
+    date = '210513'
+    for d in os.listdir(root_dir):
+        mo = pattern.search(d)
+        if mo is not None and d.startswith(date):
+            train_dir = os.path.join(root_dir, d)
+            for f in os.listdir(train_dir):
+                #print(f)
+                l_mo = loss_pattern.search(f)
+                vl_mo = val_loss_pattern.search(f)
+                if vl_mo is not None and f.endswith('.csv'):
+                    val_loss_path = os.path.join(train_dir, f)
+                elif l_mo is not None and f.endswith('.csv'):
+                    loss_path = os.path.join(train_dir, f)
+                if f == 'log.txt':
+                    with open(os.path.join(train_dir, f)) as log:
+                        lines = log.readlines()
+                        for line in lines:
+                            if line.startswith('Loss function:'):
+                                loss_function = line[15:-1]
+            # check that we found the loss files
+            do = True
+            try:
+                assert loss_path is not None
+            except:
+                print('Could not find losses for ', d)
+                do = False
+            try:
+                assert val_loss_path is not None
+            except:
+                print('Could not find validation losses for ', d)
+                do = False
+            if loss_function is None:
+                loss_function = 'Unknown'
+                print('could not find loss function in training log')
+            # save the loss plots
+            if do:
+                print(d)
+                save_channel_loss_plot(loss_path)
+                print('Saved channel losses for ', d)
+                save_loss_plot(loss_path, loss_function, val_loss_path)
+                print('Saved loss plots for ', d)
+
+    #path = os.path.join(dir_, name)
+    #save_channel_loss_plot(path)
     #v_name = 'validation-loss_z-1_z-2_y-1_y-2_y-3_x-1_x-2_x-3_c_cl.csv'
-    v_name = 'validation-loss_210401_150158_z-1_y-1_x-1__wBCE2-1-1.csv'
-    v_path = os.path.join(dir_, v_name)
-    loss_function = 'Weighted BCE Loss (2, 1, 1)'
-    save_loss_plot(path, loss_function, v_path)
+    #v_name = 'validation-loss_210401_150158_z-1_y-1_x-1__wBCE2-1-1.csv'
+    #v_path = os.path.join(dir_, v_name)
+    #loss_function = 'Weighted BCE Loss (2, 1, 1)'
+    #save_loss_plot(path, loss_function, v_path)

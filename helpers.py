@@ -92,29 +92,66 @@ def check_ids_match(x, y, regex=r'\d{6}_\d{6}_\d{1,3}'):
 # Load Output from Training 
 # -------------------------
 
-def get_dataset(train_dir, out_dir=None, GT=False, validation=False):
+def get_dataset(train_dir, out_dir=None, GT=False, validation=False, return_ID=False):
     # directory for output, if none, assume output is with training data
     if out_dir is None:
         out_dir = train_dir
     # Get output regular expression
     if validation == False:
         out_regex = r'\d{6}_\d{6}_\d{1,3}_output.tif'
+        o_s = '_output.tif'
+    else:
+        out_regex = r'\d{6}_\d{6}_\d{1,3}_validation_output.tif'
+        o_s = '_validation_output.tif'
+    # Get output paths and IDs
+    output_paths = sorted(get_paths(out_dir, out_regex))
+    ids = get_ids(output_paths)
+    #output = get_regex_images(out_dir, out_regex, ids)
+    # get training data (images and labels) according to id strings, 
+    #   which correspond to the batch number.
+    suffixes = ['_image.tif', '_labels.tif', o_s]
+    if GT:
+        suffixes.append('_GT.tif')
+        labs, images, output, ground_truth =  get_data_by_id(train_dir, suffixes, 
+                                       out_dir=out_dir, validation=validation)
+        if not return_ID:
+            return images, labs, output, ground_truth
+        else:
+            return images, labs, output, ground_truth, ids
+    else:
+        labs, images, output =  get_data_by_id(train_dir, suffixes, 
+                                       out_dir=out_dir, validation=validation)
+        if not return_ID:
+            return images, labs, output
+        else:
+            return images, labs, output, ids
+
+
+def get_dataset_segs(train_dir, out_dir=None, validation=True):
+    suffixes = ('_GT.tif', '_segmentation.tif', '_DoG-segmentation.tif')
+    gt, seg, dog = get_data_by_id(train_dir, suffixes, 
+                              out_dir=out_dir, validation=validation)
+    return gt, seg, dog
+
+
+def get_data_by_id(train_dir, suffixes, out_dir=None, validation=False):
+    # directory for output, if none, assume output is with training data
+    if out_dir is None:
+        out_dir = train_dir
+    # Get output regular expression
+    if not validation:
+        out_regex = r'\d{6}_\d{6}_\d{1,3}_output.tif'
     else:
         out_regex = r'\d{6}_\d{6}_\d{1,3}_validation_output.tif'
     # Get output paths and IDs
     output_paths = sorted(get_paths(out_dir, out_regex))
     ids = get_ids(output_paths)
-    output = get_regex_images(out_dir, out_regex, ids)
-    # get training data (images and labels) according to id strings, 
-    #   which correspond to the batch number.
-    labs = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_labels.tif', ids)
-    images = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_image.tif', ids)
-    images = da.stack([images], axis=1)
-    if GT:
-        ground_truth = get_regex_images(train_dir, r'\d{6}_\d{6}_\d{1,3}_GT.tif', ids)
-        return images, labs, output, ground_truth
-    else:
-        return images, labs, output
+    id_regex = r'\d{6}_\d{6}_\d{1,3}'
+    out = []
+    for s in suffixes:
+        regex = id_regex + s
+        out.append(get_regex_images(train_dir, regex, ids))
+    return tuple(out)
 
 
 def get_regex_images(data_dir, regex, ids, id_regex=r'\d{6}_\d{6}_\d{1,3}'):

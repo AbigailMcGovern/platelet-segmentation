@@ -5,8 +5,11 @@ import torch
 import torch.nn as nn
 
 
-def channel_losses_to_dict(inputs, targets, channels, loss_dict):
-    loss = nn.BCELoss()
+def channel_losses_to_dict(inputs, targets, channels, loss, loss_dict):
+    #if targets.max() < 1 and targets.min() > 0:
+    #loss = nn.BCELoss()
+    #else:
+       # loss = nn.MSELoss()
     for i, c in enumerate(channels):
         c_input = inputs[:, i, ...].detach()
         c_target = targets[:, i, ...].detach()
@@ -125,6 +128,36 @@ class EpochwiseWeightedBCELoss(nn.Module):
         return loss
 
 
+class ChannelwiseLoss(torch.nn.Module):
+    def __init__(self, losses, channels, device, channel_dim=1, 
+                 ndims=5, reduction='mean'):
+        super(ChannelwiseLoss, self).__init__()
+        self.losses = [loss.to(device) for loss in losses]
+        self.reduction = reduction
+        slices = []
+        for c in channels:
+            s_ = [slice(None, None),] * ndims
+            s_[channel_dim] = c
+            s_ = tuple(s_)
+            slices.append(s_)
+        self.slices = slices
+
+    def forward(self, inputs, targets):
+        losses = torch.zeros(len(self.losses))
+        for i, s_ in enumerate(self.slices):
+            ipt = inputs[s_]
+            tgt = targets[s_]
+            loss = self.losses[i](ipt, tgt)
+            losses[i] = loss
+        if self.reduction == 'mean':
+            loss = losses.mean()
+        elif self.reduction == 'sum':
+            loss = losses.sum()
+        else:
+            raise ValueError(f'{self.reduction} is not a valid reduction for this loss')
+        return loss
+
+
 def weighted_BCE_loss(
         inputs, 
         targets, 
@@ -220,8 +253,7 @@ def flatten_channels(inputs, targets, channel_dim):
     targets = torch.flatten(targets, start_dim=1)
     return inputs, targets
 
-
-
+  
 # -------------------
 # Probably Not Useful
 # -------------------
