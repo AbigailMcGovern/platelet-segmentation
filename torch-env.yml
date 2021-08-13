@@ -27,3 +27,4 @@ dependencies:
   # - afforgato # cpape - for affinity segmentation
   - pip:
     - tensorstore
+    - ptitprince
