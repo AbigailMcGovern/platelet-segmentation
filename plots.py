@@ -217,7 +217,7 @@ def experiment_VI_plots(
     o = 'h'
     pal = 'Set2'
     sigma = .2
-    f, axs = plt.subplots(1, 2, figsize=(14, 10), sharex=True, sharey=True)
+    f, axs = plt.subplots(1, 2, figsize=(14, 10)) #, sharex=True) #, sharey=True)
     ax0 = axs[0]
     ax1 = axs[1]
     pt.RainCloud(x = x, y = cond_ent_over, data = data, palette = pal, bw = sigma,
@@ -241,6 +241,7 @@ def experiment_VI_plots(
 
 def plot_experiment_APs(paths, names, title, out_dir, out_name, show=True):
     dfs = [pd.read_csv(path) for path in paths]
+    os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, out_name)
     plot_AP(dfs, names, out_path, title, show=show)
 
@@ -267,6 +268,7 @@ def plot_AP(dfs, names, out_path, title, thresh_name='threshold', ap_name='avera
 def plot_experiment_no_diff(paths, names, title, out_dir, out_name, col_name='n_diff', show=True):
     dfs = [pd.read_csv(path) for path in paths]
     plt.rcParams.update({'font.size': 16})
+    os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, out_name)
     groups = []
     n_diff = []
@@ -287,7 +289,6 @@ def plot_experiment_no_diff(paths, names, title, out_dir, out_name, col_name='n_
     pt.RainCloud(x=x, y='n_diff', data=data, palette=pal, bw=sigma,
                  width_viol=.6, ax=ax, orient=o)
     plt.title(title)
-    plt.legend(names)
     f.savefig(out_path)
     if show:
         plt.show()

@@ -11,7 +11,7 @@ def segment_experiment(
         compactness=0.,
         display=True, 
     ):
-    seg_info = _get_experiment_seg_info(data_dir, experiments, 
+    seg_info = get_experiment_seg_info(data_dir, experiments, 
                                         w_scale, compactness, 
                                         display)
     for key in seg_info.keys():
@@ -63,15 +63,15 @@ def segmentation_plots(data_dir, seg_info, exp_name, out_name):
                         f'Average precision: {exp_name}', 
                         out_dir, 
                         out_name + '_val_AP')
-    plot_experiment_no_diff(ap_paths, 
-                            ap_names, 
-                            f'Average precision: {exp_name}', 
+    plot_experiment_no_diff(nd_paths, 
+                            nd_names, 
+                            f'Number difference: {exp_name}', 
                             out_dir, 
                             out_name + '_val_num-diff')
 
 
 
-def _get_experiment_seg_info(
+def get_experiment_seg_info(
         data_dir, 
         experiments, 
         w_scale=None, 
@@ -146,18 +146,18 @@ def _get_VI_paths(data_dir, seg_info, validation=False):
 
 def _get_AP_paths(data_dir, seg_info, validation=True):
     if validation:
-        s = '_validation_AP'
+        s = '_validation_AP.csv'
     else:
-        s = '_test_AP'
+        s = '_test_AP.csv'
     paths, names = _get_data_paths(data_dir, seg_info, s)
     return paths, names
         
 
 def _get_IoU_paths(data_dir, seg_info, validation=True):
     if validation:
-        s = 'validation_metrics'
+        s = '_validation_metrics.csv'
     else:
-        s = 'test_metrics'
+        s = '_test_metrics.csv'
     paths, names = _get_data_paths(data_dir, seg_info, s)
     return paths, names
 
