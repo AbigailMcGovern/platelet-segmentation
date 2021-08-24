@@ -28,3 +28,5 @@ dependencies:
   - pip:
     - tensorstore
     - ptitprince
+    - napari_bioformats
+    - platelet-unet-watershed
