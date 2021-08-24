@@ -9,12 +9,27 @@ def augment_images(image, labels, ground_truth=None, augment_prob=0.9):
     augment = np.random.binomial(1, augment_prob)
     if augment:
         image = augment_intensity(image)
-    imgs = [image, labels]
+    imgs = [image, ]
+    if isinstance(labels, dict):
+        for key in labels.keys():
+            imgs.append(labels[key])
+    else:
+        imgs.append(labels)
     if ground_truth is not None:
         imgs.append(ground_truth)
     if augment:
         imgs = augment_order(imgs)
-    return tuple(imgs)
+    result = [imgs[0], ]
+    if isinstance(labels, dict):
+        keys = list(labels.keys())
+        labs = {key : imgs[i + 1] for i, key in enumerate(keys)}
+    else:
+        labs = imgs[1]
+    result.append(labs)
+    if ground_truth is not None:
+        gt = imgs[-1]
+        result.append(gt)
+    return tuple(result)
 
 
 def augment_intensity(

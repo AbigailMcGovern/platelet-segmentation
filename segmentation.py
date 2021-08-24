@@ -170,7 +170,8 @@ def segment_output_image(
         thresholding_channel, 
         scale=None, 
         compactness=0., 
-        absolute_thresh=None
+        absolute_thresh=None, 
+        out=None,
     ):
     '''
     Parameters
@@ -226,6 +227,9 @@ def segment_output_image(
     else:
         segmentation = np.zeros(mask[1:-1, 1:-1, 1:-1].shape, dtype=int)
     seeds = centroids - 1
+    if out is not None:
+        for i in range(out.shape[0]):
+            out[i, ...] = segmentation[i, ...]
     return segmentation, seeds, mask
 
 
