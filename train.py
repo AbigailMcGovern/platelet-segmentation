@@ -24,19 +24,18 @@ from unet import UNet, ForkedUNet
 
 def train_unet(
                # training data
-               xs, 
-               ys, 
-               ids, 
+               x,
+               vx,  
+               y, 
+               vy,
+               ids,
+               vids, 
                # output information
                out_dir, 
-               suffix, 
+               name, 
                channels=None,
-               # validation data
-               v_xs=None,
-               v_ys=None,
-               v_ids=None,
-               validate=False,
                # training variables
+               validate=True,
                log=True,
                epochs=3, 
                lr=0.01, 
@@ -140,40 +139,41 @@ def train_unet(
     # get the dictionary that will be converted to a csv of losses
     #   contains columns for each channel, as we record channel-wise
     #   BCE loss in addition to the loss used for backprop
-    channels = _index_channels_if_none(channels, xs) 
+    channels = _index_channels_if_none(channels, x) 
     loss_dict = _get_loss_dict(channels)
+    v_loss = _get_loss_function(loss_function, chan_weights, device, losses, chan_losses)
+    validation_dict = {
+        'epoch' : [], 
+        'validation_loss' : [], 
+        'data_id' : [], 
+        'batch_id': []
+    }
     if validate:
-        v_loss = _get_loss_function(loss_function, chan_weights, device, losses, chan_losses)
-        validation_dict = {'epoch' : [], 
-                           'validation_loss' : [], 
-                           'data_id' : [], 
-                           'batch_id': []
-                           }
-        no_iter = (epochs * len(xs)) + ((epochs + 1) * len(v_xs))
+        no_iter = (epochs * len(x)) + ((epochs + 1) * len(vx))
     else:
-        no_iter = epochs * len(xs)
+        no_iter = epochs * len(x)
     # print the training into and log if applicable 
     bce_weights = _bce_weights(loss) # gets weights if using WeightedBCE
     _print_train_info(loss_function, bce_weights, epochs, lr, 
                       weights_are, device_name, out_dir, log, 
                       chan_losses, losses, channels, fork_channels)
     # loop over training data 
-    y_hats, v_y_hats = _train_loop(no_iter, epochs, xs, ys, ids, device, unet, 
+    y_hats, v_y_hats = _train_loop(no_iter, epochs, x, y, ids, device, unet, 
                                    out_dir, optimiser, loss, loss_dict,  
-                                   validate, v_xs, v_ys, v_ids, validation_dict, 
-                                   v_loss, update_every, log, suffix, channels)
-    _save_final_results(unet, out_dir, suffix, y_hats, ids, validate, 
-                        loss_dict, v_y_hats, v_ids, validation_dict)
-    #_plots(out_dir, suffix, loss_function, validate) # 2 leaked semaphore objects... pytorch x mpl??
-    return unet
+                                   validate, vx, vy, vids, validation_dict, 
+                                   v_loss, update_every, log, name, channels)
+    unet_path = _save_final_results(unet, out_dir, name, y_hats, ids, validate, 
+                                    loss_dict, v_y_hats, vids, validation_dict)
+    #_plots(out_dir, name, loss_function, validate) # 2 leaked semaphore objects... pytorch x mpl??
+    return unet, unet_path
 
 
 
-def _plots(out_dir, suffix, loss_function, validate):
-    l_path = os.path.join(out_dir, 'loss_' + suffix + '.csv')
+def _plots(out_dir, name, loss_function, validate):
+    l_path = os.path.join(out_dir, 'loss_' + name + '.csv')
     v_path = None
     if validate:
-        vl_path = os.path.join(out_dir, 'validation-loss_' + suffix + '.csv')
+        vl_path = os.path.join(out_dir, 'validation-loss_' + name + '.csv')
     save_loss_plot(l_path, loss_function, v_path=vl_path, show=False)
     save_channel_loss_plot(l_path, show=False)
 
@@ -210,9 +210,9 @@ def _load_weights(weights, unet):
     return weights_are
 
 
-def _index_channels_if_none(channels, xs):
+def _index_channels_if_none(channels, x):
     if channels is None:
-        new_chans = ['channel_' + str(i) for i in range(xs[0].shape[1])]
+        new_chans = ['channel_' + str(i) for i in range(x[0].shape[1])]
         return tuple(new_chans)
     else:
         return channels
@@ -269,10 +269,10 @@ def _print_train_info(loss_function, bce_weights, epochs, lr,
 
 
 
-def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
-                optimiser, loss, loss_dict,  validate, v_xs, v_ys, 
-                v_ids, validation_dict, v_loss, update_every, log, 
-                suffix, channels):
+def _train_loop(no_iter, epochs, x, y, ids, device, unet, out_dir,
+                optimiser, loss, loss_dict,  validate, vx, vy, 
+                vids, validation_dict, v_loss, update_every, log, 
+                name, channels):
     v_y_hats = None
     # loop over training data 
     unet = unet.to(device=device, dtype=torch.float32)
@@ -283,14 +283,14 @@ def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
                 _set_epoch_if_epoch_weighted(v_loss, e, verbose=False)
                 if e == 0:
                     # first validation at the start of the first epoch
-                    v_y_hats = _validate(v_xs, v_ys, v_ids, 
+                    v_y_hats = _validate(vx, vy, vids, 
                                          device, unet, v_loss, 
                                          progress, log, out_dir, 
                                          validation_dict, e, 0)
             running_loss = 0.0
             y_hats = []
-            for i in range(len(xs)):
-                l = _train_step(i, xs, ys, ids, device, unet, optimiser, 
+            for i in range(len(x)):
+                l = _train_step(i, x, y, ids, device, unet, optimiser, 
                                 y_hats, loss, loss_dict, e, channels)
                 optimiser.step()
                 running_loss += l.item()
@@ -304,13 +304,13 @@ def _train_loop(no_iter, epochs, xs, ys, ids, device, unet, out_dir,
                     running_loss = 0.0
             if validate:
                 # validation at the end of the epoch
-                batch_no = ((e + 1) * len(xs))
-                v_y_hats = _validate(v_xs, v_ys, v_ids, 
+                batch_no = ((e + 1) * len(x))
+                v_y_hats = _validate(vx, vy, vids, 
                                      device, unet, v_loss, 
                                      progress, log, out_dir, 
                                      validation_dict, e, batch_no)
             _save_checkpoint(unet.state_dict(), out_dir, 
-                             f'{suffix}_epoch-{e}')  
+                             f'{name}_epoch-{e}')  
     return y_hats, v_y_hats
 
 
@@ -370,61 +370,45 @@ def _prep_x_y(x, y, device):
     return x, y
 
 
-def _save_final_results(unet, out_dir, suffix, y_hats, ids, validate,
+def _save_final_results(unet, out_dir, name, y_hats, ids, validate,
                         loss_dict, v_y_hats, v_ids, validation_dict):
-    _save_checkpoint(unet.state_dict(), out_dir, suffix)
+    unet_path = _save_checkpoint(unet.state_dict(), out_dir, name, r=True)
     _save_output(y_hats, ids, out_dir)
     loss_df = pd.DataFrame(loss_dict)
-    loss_df.to_csv(os.path.join(out_dir, 'loss_' + suffix + '.csv'))
+    loss_df.to_csv(os.path.join(out_dir, 'loss_' + name + '.csv'))
     if validate:
-        _save_output(v_y_hats, v_ids, out_dir, suffix='_validation')
+        _save_output(v_y_hats, v_ids, out_dir, name='_validation')
         v_loss_df = pd.DataFrame(validation_dict)
         v_loss_df.to_csv(os.path.join(out_dir, 
-                         'validation-loss_' + suffix + '.csv'))
+                         'validation-loss_' + name + '.csv'))
+    return unet_path
 
 
-def _save_checkpoint(checkpoint, out_dir, suffix):
+def _save_checkpoint(checkpoint, out_dir, name, r=False):
     now = datetime.now()
     d = now.strftime("%y%d%m_%H%M%S")
-    name = d + '_unet_' + suffix + '.pt'
+    name = d + '_unet_' + name + '.pt'
     path = os.path.join(out_dir, name)
     os.makedirs(out_dir, exist_ok=True)
     torch.save(checkpoint, path)
+    if r:
+        return path
 
 
-def _save_output(y_hats, ids, out_dir, suffix=''):
+def _save_output(y_hats, ids, out_dir, name=''):
     assert len(y_hats) == len(ids)
     os.makedirs(out_dir, exist_ok=True)
     for i in range(len(y_hats)):
-        n = ids[i] + suffix +'_output.tif'
+        n = ids[i] + name +'_output.tif'
         p = os.path.join(out_dir, n)
         with TiffWriter(p) as tiff:
             tiff.write(y_hats[i].detach().cpu().numpy())
 
 
-#def test_unet(unet, image_paths, labels_paths, out_dir):
- #   xs, ys, ids = load_train_data(image_paths, labels_paths, out_dir, n_each=10)
-  #  device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-   # y_hats = []
-#    correct = []
- #   for i in range(len(xs)):
-  #      x, y = xs[i].to(device), ys[i].to(device)
-   #     y_hat = unet(x.float())
-    #    y_hats.append(y_hat)
-     #   same = y.numpy() == y_hat.numpy()
-      #  prop_correct = same.sum() / same.size
-       # correct.append(prop_correct)
-#        print(f'The proportion of correct pixels for image {ids[i]}: {prop_correct}') 
- #   save_output(y_hats, ids, out_dir)
-  #  correct = np.array(correct)
-   # print(f'Overall, the model scored {correct.mean() * 100} %')
-#    return unet
 
-
-
-# -----------------
-# Wrapper Functions
-# -----------------
+# ----------------------------
+# Depricated Wrapper Functions
+# ----------------------------
 
 
 def train_unet_from_directory(
@@ -509,11 +493,11 @@ def train_unet_from_directory(
         d = out_dir
     else:
         d = data_dir
-    xs, ys, ids = load_train_data(d)
+    x, y, ids = load_train_data(d)
     # if applicable, load the validation data
     if validation_dir is not None:
         validate = True
-        v_xs, v_ys, v_ids = _load_validation(validation_dir, out_dir, log)
+        vx, vy, vids = _load_validation(validation_dir, out_dir, log)
     else:
         v_xs, v_ys, v_ids = None, None, None
         validate = False
