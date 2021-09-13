@@ -155,6 +155,13 @@ mini_exp = get_experiment_dict(
     n_each=50, 
     name='mini-train-unet'
 )
+
+basic_exp = get_experiment_dict(
+    [('z-1', 'y-1', 'x-1', 'mask', 'centreness-log')], 
+    ['z-1_y-1_x-1_m_c'], 
+    n_each=50
+)
+
 #forked_exp = {
  #       3: get_experiment_dict({
   #          'name' : 'f3,2_z-1_y-1_x-1_m_cl', 

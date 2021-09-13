@@ -9,9 +9,9 @@ dependencies:
   - torchvision
   - cudatoolkit
   - pandas
-  # nd2reader
+  - nd2reader
   - scikit-image
-  #- trackpy
+  - trackpy
   - dask
   - dask-jobqueue
   - distributed
@@ -19,7 +19,7 @@ dependencies:
   - ipython
   #- jupyter
   #- jupyterlab
-  #- opencv
+  - opencv
   - zarr
   - numpy
   - tqdm
