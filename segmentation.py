@@ -170,7 +170,9 @@ def segment_output_image(
         thresholding_channel, 
         scale=None, 
         compactness=0., 
-        absolute_thresh=None
+        absolute_thresh=None, 
+        out=None,
+        use_logging=None,
     ):
     '''
     Parameters
@@ -226,6 +228,16 @@ def segment_output_image(
     else:
         segmentation = np.zeros(mask[1:-1, 1:-1, 1:-1].shape, dtype=int)
     seeds = centroids - 1
+    if use_logging is not None:
+        max_lab = segmentation.max()
+        import logging
+        logging.basicConfig(filename=use_logging, encoding='utf-8', level=logging.DEBUG)
+        logging.debug(f'Internal segmentatation max label: {max_lab}')
+    if out is not None:
+        out[:] = segmentation[:]
+        if use_logging is not None:
+            max_lab = np.max(out)
+            logging.debug(f'Out segmentation max label: {max_lab}')
     return segmentation, seeds, mask
 
 

@@ -27,3 +27,6 @@ dependencies:
   # - afforgato # cpape - for affinity segmentation
   - pip:
     - tensorstore
+    - ptitprince
+    - napari_bioformats
+    - platelet-unet-watershed

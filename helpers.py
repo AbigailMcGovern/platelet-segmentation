@@ -128,10 +128,10 @@ def get_dataset(train_dir, out_dir=None, GT=False, validation=False, return_ID=F
 
 
 def get_dataset_segs(train_dir, out_dir=None, validation=True):
-    suffixes = ('_GT.tif', '_segmentation.tif', '_DoG-segmentation.tif')
-    gt, seg, dog = get_data_by_id(train_dir, suffixes, 
+    suffixes = ('_GT.tif', '_segmentation.tif', '_DoG-segmentation.tif', '_image.tif')
+    gt, seg, dog, im = get_data_by_id(train_dir, suffixes, 
                               out_dir=out_dir, validation=validation)
-    return gt, seg, dog
+    return gt, seg, dog, im
 
 
 def get_data_by_id(train_dir, suffixes, out_dir=None, validation=False):
