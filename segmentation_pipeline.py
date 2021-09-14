@@ -16,7 +16,6 @@ import json
 from time import time
 import zarr
 from zarpaint._zarpaint import create_ts_meta
-from train_io import normalise_data
 import logging
 from datetime import datetime
 from tifffile import TiffWriter
@@ -160,33 +159,39 @@ def segment_volume(
         thresholding_channel=3,
         size=(10, 256, 256),
         save_pred=None,
-    ):
+        ):
     prediction_output = np.zeros((5, ) + image.shape[1:], dtype=np.float32)
     if t is None:
         labels = [labels,]
         image = [image, ]
         t = 0
+
     # inner function
     def segment(prediction, t):
-        yield from segment_output_image(prediction, affinities_channels=affinities_channels, 
-                                    centroids_channel=centroids_channel, 
-                                    thresholding_channel=thresholding_channel, 
-                                    out=labels[t], use_logging=LOG_NAME)
+        yield from segment_output_image(
+            prediction,
+            affinities_channels=affinities_channels,
+            centroids_channel=centroids_channel,
+            thresholding_channel=thresholding_channel,
+            out=labels[t],
+        )
     # normalise the entire frame @ t -  as was done prior to training
-    x_input = normalise_data(image[t].compute().astype(np.float32))
+    x_input = rescale_intensity(image[t].compute()).astype(np.float32)
     # predictions by unet
     logging.debug('Predicting output chunks...')
-    predict_output_chunks(unet, x_input, size, prediction_output, margin=(1, 64, 64))
-    pred_val = np.array(prediction_output[0, 16]).mean()
+    for _ in predict_output_chunks(
+        unet, x_input, size, prediction_output, margin=(1, 64, 64)
+    ):
+        pass
+    pred_val = np.array(prediction_output[:, 16]).mean()
     logging.debug(f'Prediction output 16th z-slice average: {pred_val}')
     if save_pred is not None:
-       with TiffWriter(save_pred) as tiff: 
-           tiff.save(prediction_output)
+        with TiffWriter(save_pred) as tiff:
+            tiff.save(prediction_output)
     # segment with affinities watershed
     logging.debug('Running affinities watershed...')
     for i in segment(prediction_output, t):
-            pass
-
+        pass
 
 
 # ------------------
@@ -203,7 +208,10 @@ def segment_timeseries(image,
     frame = image.shape[1:]
     t_max = image.shape[0]
     # get the labels output volume to which to write frame labels
-    labels = [zarr.zeros(frame, dtype=np.uint32, chunk_size=(1,) + frame) for _ in range(t_max)]
+    labels = [
+        zarr.zeros(frame, dtype=np.uint32, chunk_size=(1,) + frame)
+        for _ in range(t_max)
+    ]
     for t in range(t_max):
         segment_volume(image, unet, labels, t=t, save_pred=save_pred)
     # make cohort and treatment directories in scratch if they don't exist
