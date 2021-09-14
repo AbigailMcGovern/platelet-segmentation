@@ -216,7 +216,7 @@ def segment_output_image(
     else:
         mask = masking_img > absolute_thresh
     mask = np.pad(mask, 1, constant_values=0) # edge voxels must be 0
-    mask, centroids = _remove_unwanted_objects(mask, centroids, min_area=10, max_area=10000)
+    mask, centroids = _remove_unwanted_objects(mask, centroids, min_area=10, max_area=100000)
     if centroids.shape[0] != 0:
         # affinity-based watershed
         segmentation = watershed(affinties, centroids, mask, 
@@ -257,7 +257,7 @@ def _get_centroids(cent, gaussian=True):
     return centroids
 
 
-def _remove_unwanted_objects(mask, centroids, min_area=0, max_area=10000):
+def _remove_unwanted_objects(mask, centroids, min_area=0, max_area=100000):
     labs, _ = label(mask)
     props = regionprops(labs)
     new = np.zeros_like(mask)
