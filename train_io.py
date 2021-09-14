@@ -81,16 +81,24 @@ def get_train_data(
     of the labels (anywhere you see 'name' above) will be 'y'.
     """
     assert len(image_paths) == len(gt_paths)
+    now = datetime.now()
+    d = now.strftime("%y%m%d_%H%M%S") + '_' + name
+    out_dir = os.path.join(out_dir, d)
+    os.makedirs(out_dir, exist_ok=True)
     chunk_dicts = []
     for i in range(len(image_paths)):
-        chunk_dict = get_random_chunks(image_paths[i], gt_paths[i], 
-                                            out_dir, 
-                                            name=name,
-                                            shape=shape, 
-                                            n=n_each, 
-                                            channels=channels,
-                                            scale=scale, 
-                                            log=log)
+        chunk_dict = get_random_chunks(
+            image_paths[i], 
+            gt_paths[i], 
+            out_dir, 
+            name=name,
+            shape=shape, 
+            n=n_each, 
+            channels=channels,
+            scale=scale, 
+            log=log, 
+            image_no=i
+        )
         chunk_dicts.append(chunk_dict)
     chunk_dicts = concat_chunk_dicts(chunk_dicts)
     train_dicts = chunk_dict_to_train_dict(chunk_dicts, validation_prop)
@@ -105,10 +113,11 @@ def get_random_chunks(
                       name='unet-training',
                       shape=(10, 256, 256), 
                       n=25, 
-                      min_brightness_prop=0.05, 
+                      min_brightness_prop=0.005, 
                       channels=('z-1', 'y-1', 'x-1', 'centreness'),
                       scale=(4, 1, 1), 
-                      log=True
+                      log=True, 
+                      image_no=0
                       ):
     '''
     Obtain random chunks of data from whole ground truth volumes.
@@ -142,8 +151,15 @@ def get_random_chunks(
     print(s)
     # in the following code, image chunks are np.ndarray
     print('Generating random image chunks...')
-    chunk_dict = get_image_chunks(image, out_dir, shape=shape, 
-                                  n=n, min_brightness_prop=min_brightness_prop)
+    chunk_dict = get_image_chunks(
+        image, 
+        shape=shape, 
+        n=n, 
+        min_brightness_prop=min_brightness_prop, 
+        image_no=image_no
+    )
+    chunk_dict['df']['image_no'] = [image_no, ] * len(chunk_dict['df'])
+    chunk_dict['df']['image_file'] = [Path(image_path).stem, ] * len(chunk_dict['df'])
     print('Generating training labels...')
     chunk_dict = get_labels_chunks(chunk_dict, ground_truth, 
                                    channels=channels, scale=scale)
@@ -166,7 +182,13 @@ def get_random_chunks(
         write_log(s, save_dir)
     log_dir = log_dir_or_None(log, save_dir)
     print_labels_info(channels, out_dir=log_dir)
-    chunk_dict['df'].to_csv(os.path.join(save_dir, 'start_coords.csv'))
+    df_path = os.path.join(save_dir, 'start_coords.csv')
+    if os.path.exists(df_path):
+        df = pd.read_csv(df_path)
+        df = pd.concat([df, chunk_dict['df']])
+    else:
+        df = chunk_dict['df']
+    df.to_csv(df_path)
     return chunk_dict
 
 
@@ -176,10 +198,10 @@ def get_random_chunks(
 
 def get_image_chunks(
     image, 
-    out_dir, 
     shape=(10, 256, 256), 
     n=25, 
     min_brightness_prop=0.3, 
+    image_no=0,
 ):
     im = np.array(image)
     assert len(im.shape) == len(shape)
@@ -200,7 +222,8 @@ def get_image_chunks(
         s_ = [slice(dim_randints[j], dim_randints[j] + shape[j]) for j in range(len(shape))]
         s_ = tuple(s_)
         x = im[s_]
-        if (x.mean() / im.max()) > min_brightness_prop: # if the image is bright enough
+        mbrightprop = x.mean() / x.max()
+        if mbrightprop > min_brightness_prop: # if the image is bright enough
             # add the image slice to the slices dict (to be used later for GT segmentation)
             slices.append(s_)
             # add coords to output df
@@ -211,7 +234,7 @@ def get_image_chunks(
             xs.append(x)
             # get the datetime to give the samples unique names 
             now = datetime.now()
-            d = now.strftime("%y%m%d_%H%M%S") + '_' + str(i)
+            d = now.strftime("%y%m%d_%H%M%S") + f'_img-{image_no}_chunk-{i}'
             ids.append(d)
             # another successful addition, job well done you crazy mofo
             i += 1
@@ -321,28 +344,24 @@ def save_from_chunk_dict(chunk_dict, out_dir, name):
     gt = chunk_dict['ground_truth'] # list (len n)
     ids = chunk_dict['ids']
     # get the folder to which to save the data
-    now = datetime.now()
-    name = now.strftime("%y%m%d_%H%M%S") + '_' + name
-    save_dir = os.path.join(out_dir, name)
-    os.makedirs(save_dir, exist_ok=True)
     chunk_dict['name'] = name
     # save the images and gt
     for i in range(len(x)):
-        save_chunk(save_dir, x[i], ids[i], '_image.tif')
-        save_chunk(save_dir, gt[i], ids[i], '_GT.tif')
+        save_chunk(out_dir, x[i], ids[i], '_image.tif')
+        save_chunk(out_dir, gt[i], ids[i], '_GT.tif')
     # make subdirectories for training labels and save
     labs_paths = {}
     for key in labs_keys:
         chans = channels[key]
         i = 0
-        path = os.path.join(save_dir, str(key))
+        path = os.path.join(out_dir, str(key))
         labs_paths[key] = path
         os.makedirs(path, exist_ok=True)
         y = ys[key]
         for j in range(len(y)):
             save_chunk(path, y[j], ids[j], '_labels.tif')
         i += 1
-    chunk_dict['save_dir'] = save_dir
+    chunk_dict['save_dir'] = out_dir
     chunk_dict['labels_dirs'] = labs_paths
     # convert ground truth to lazy rep so that it is accessible for vis 
     # but not using memory
@@ -350,7 +369,7 @@ def save_from_chunk_dict(chunk_dict, out_dir, name):
         [da.from_array(chunk_dict['ground_truth'][i], 
          chunks=chunk_dict['ground_truth'][i].shape) \
         for i in range(len(chunk_dict['ground_truth']))])
-    return save_dir
+    return out_dir
         
 
 # ----------------

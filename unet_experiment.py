@@ -29,13 +29,17 @@ try:
     h = 'type of experiment (mini, threshold, seed, affinities, lr, lsr, forked) or path to experiment JSON'
     p.add_argument('-e', '--experiment', help=h)
     args = p.parse_args()
+    out_dir = args.savedir
+    now = datetime.now()
+    dt = now.strftime("%y%m%d_%H%M%S")
+    LOG_NAME = os.path.join(out_dir, f'{dt}_training-log.log')
+    logging.basicConfig(filename=LOG_NAME, encoding='utf-8', level=logging.DEBUG)
     dirs = args.dirs
     logging.debug(str(dirs))
     image_paths = get_files(dirs, ends='_image.zarr')
     logging.debug(str(image_paths))
     gt_paths = get_files(dirs, ends='_labels.zarr')
     logging.debug(str(gt_paths))
-    out_dir = args.savedir
     logging.debug(out_dir)
     exp = args.experiment
     logging.debug(exp)
