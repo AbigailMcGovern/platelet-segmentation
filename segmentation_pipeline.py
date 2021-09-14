@@ -169,11 +169,12 @@ def segment_volume(
     # inner function
     def segment(prediction, t):
         yield from segment_output_image(prediction, affinities_channels=affinities_channels, 
-                                    centroids_channel=centroids_channel, 
-                                    thresholding_channel=thresholding_channel, 
-                                    out=labels[t], use_logging=LOG_NAME)
+                                        centroids_channel=centroids_channel, 
+                                        thresholding_channel=thresholding_channel, 
+                                        out=labels[t], use_logging=LOG_NAME)
     # normalise the entire frame @ t -  as was done prior to training
-    x_input = normalise_data(image[t].compute().astype(np.float32))
+    #x_input = normalise_data(image[t].compute().astype(np.float32))
+    x_input = rescale_intensity(image[t].compute().astype(np.float32))
     # predictions by unet
     logging.debug('Predicting output chunks...')
     predict_output_chunks(unet, x_input, size, prediction_output, margin=(1, 64, 64))
