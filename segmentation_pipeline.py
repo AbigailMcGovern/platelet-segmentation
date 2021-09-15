@@ -6,6 +6,7 @@ import os
 import pandas as pd
 from skimage.exposure import rescale_intensity
 from skimage.measure import regionprops_table
+from toolz.itertoolz import count
 from unet import UNet
 import torch
 from pathlib import Path
@@ -305,27 +306,31 @@ def get_labels_info(labels, images, channels_dict, meta, out_dir, id_str):
     logging.debug(f'labels shape: {labels.shape}')
     logging.debug(f'Channels dict: {channels_dict}')
     # go through each subsequent frame in the labels file
+    counter = 0
     for t in range(t_max):
         try:
             l_max = np.max(labels[t])
             logging.debug(f'labels max at {t}: {l_max}')
             chans_dfs = []
+            chans_started = False
             for key in channels_dict.keys():
                 chan = channels_dict[key]
                 logging.debug(f'Segmenting channel {key}')
                 im = images[channels_dict[key]][t, ...].compute()
                 im = np.array(im)
                 logging.debug(f'{key} frame: {im.shape}, {type(im)}')
-                if not started:
+                if not chans_started:
                     props = ('label', 'centroid', 'inertia_tensor_eigvals',
                                    'area', 'mean_intensity', 'max_intensity')
+                    chans_started = True
                 else:
-                    props = ('mean_intensity', 'max_intensity')
+                    props = ('label', 'mean_intensity', 'max_intensity')
                 df = regionprops_table(labels[t], 
                                    intensity_image=im, 
                                    properties=props)
-                df['t'] = [t,] * len(df['area']) 
+                df['t'] = [t,] * len(df['label']) 
                 df = pd.DataFrame(df)
+                df_labs = df['label'].values
                 df = df.set_index('label')
                 df = df.rename(columns={
                 'mean_intensity' : f'{key}: mean_intensity',
@@ -337,6 +342,14 @@ def get_labels_info(labels, images, channels_dict, meta, out_dir, id_str):
             logging.exception('Got exeption whist geting A647 intensity info')
             raise
         df = pd.concat(chans_dfs, axis=1)
+        df['label'] = df_labs
+        df_pids = [i for i in range(counter, len(df['label']) + counter)]
+        counter += len(df['label'])
+        df['pid'] = df_pids
+        df = df.set_index('pid')
+        bbb = len(df)
+        df = df.loc[~df.index.duplicated(keep='first')]
+        aaa = len(df)
         labs_df.append(df)
     labs_df = pd.concat(labs_df)
     cols = df.columns.values
@@ -355,8 +368,6 @@ def get_labels_info(labels, images, channels_dict, meta, out_dir, id_str):
     # get flatness (or lineness) scores
     labs_df['elongation'] = np.sqrt(1 - labs_df['inertia_tensor_eigvals-2'] / labs_df['inertia_tensor_eigvals-0'])
     labs_df['flatness'] = np.sqrt(1 - labs_df['inertia_tensor_eigvals-2'] / labs_df['inertia_tensor_eigvals-1'])
-    # ensure unique labels
-    labs_df['pid'] = range(len(labs_df)) # ensure unique labels
     # add file info
     labs_df['file'] = meta['file']
     labs_df['cohort'] = meta['cohort']
@@ -382,9 +393,12 @@ def load_unet(unet_path, cpu=False):
     if cpu:
         sd = torch.load(unet_path, map_location=torch.device('cpu'))
     else:
-        sd = torch.load(unet_path)
+        sd = torch.load(unet_path, map_location=torch.device('cuda'))
     out_channels = sd['c8_0.batch1.weight'].shape[0]
-    unet = UNet(out_channels=out_channels)
+    unet = UNet(in_channels=1, out_channels=out_channels)
+    unet.load_state_dict(sd)
+    if not cpu:
+        unet.cuda()
     return unet
 
 
@@ -422,13 +436,15 @@ if __name__ == '__main__':
     #import argparse
     #p = argparse.ArgumentParser()
     #p.add_argument('-i', '--info', help='JSON file containing info for segmentation')
-    info_path = '/home/abigail/GitRepos/platelet-segmentation/untracked/debugging_info.json'
+    info_path = '/home/abigail/GitRepos/platelet-segmentation/untracked/inj4-dmso.json'
     #args = p.parse_args()
     #info_path = args.info
     out_dir, image_path, scratch_dir, unet, batch_name = load_from_json(info_path)
     images, image, meta, channels_dict = read_image(image_path)
     pred_name = os.path.join(out_dir, 'pred_volume.tif')
     labels = segment_timeseries(image, unet, meta, scratch_dir, save_pred=pred_name)
+    #import zarr
+    #labels = zarr.open('/home/abigail/data/plateseg-training/timeseries_seg/plateseg-training/timeseries_seg/210914_195928_191016_IVMTR12_Inj4_cang_exp3_labels.zarr')
     df, _ = get_labels_info(labels, images, channels_dict, meta, out_dir, dt)
     save_metadata(meta, out_dir, batch_name)
     import napari
