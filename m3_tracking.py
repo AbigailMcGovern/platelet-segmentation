@@ -6,7 +6,9 @@ import trackpy as tp
 
 p = argparse.ArgumentParser()
 p.add_argument('-m', '--metadata', nargs='*', help='the csv files containing metadata for processed images')
-p.add_argument('-o', '--outdir', help='directory into which output will be saved')
+p.add_argument('-o', '--outdir', help='
+
+#directory into which output will be saved')
 args = p.parse_args()
 paths = args.metadata
 out_dir = args.outdir
