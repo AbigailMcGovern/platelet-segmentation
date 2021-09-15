@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from pathlib import Path
 import numpy as np
+import napari
 
 
 def track(platelets):
@@ -23,13 +24,23 @@ def get_platelets_paths(md_path):
 def add_track_len(df):
     ids = df['particle'].values
     track_count = np.bincount(ids)
-    df['track length'] = track_count[ids]
+    df['track_no_frames'] = track_count[ids]
     return df
 
 
 def filter_df(df, min_frames=20):
-    df_filtered = df.loc[df['track length'] >= min_frames, :]
+    df_filtered = df.loc[df['track_no_frames'] >= min_frames, :]
     return df_filtered
+
+
+def view_tracks(image, labels, df, scale=(1, 4, 1, 1), min_frames=20):
+    cols = ['particle', 't', 'z_pixels', 'y_pixels', 'x_pixels']
+    df_filtered = filter_df(df, min_frames=min_frames)
+    tracks = df_filtered[cols]
+    v = napari.view_image(image, scale=scale, blending='additive')
+    v.add_labels(labels, scale=scale, blending='additive')
+    v.add_tracks(tracks, scale=scale)
+    napari.run()
 
 
 if __name__ == '__main__':
@@ -40,6 +51,7 @@ if __name__ == '__main__':
     for p in p_paths:
         df = pd.read_csv(p)
         df = track(df)
+        df = add_track_len(df)
         tracks_name = Path(p).stem + '_tracks.csv'
         tracks_path = os.path.join(out_dir, tracks_name)
         df.to_csv(tracks_path)
