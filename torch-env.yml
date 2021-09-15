@@ -30,3 +30,4 @@ dependencies:
     - ptitprince
     - napari_bioformats
     - platelet-unet-watershed
+    - nd2_dask

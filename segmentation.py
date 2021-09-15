@@ -179,7 +179,7 @@ def segment_output_image(
     ----------
     unet_output: np.ndarray or dask.array.core.Array
         Output from U-net inclusive of all channels. If there is an extra 
-        dim of size 1, this will be squeezed out. Therefore shape may be
+      r  dim of size 1, this will be squeezed out. Therefore shape may be
         (1, c, z, y, x) or (c, z, y, x).
     affinities_channels: tuple of int
         Ints, in order (z, y, x) describe the channel indicies to which 
