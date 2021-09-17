@@ -62,18 +62,18 @@ def write_json(json_path, out_dir, image_path, scratch_dir, unet_path, batch_nam
 # MASSIVE Paths
 # -------------
 
-#data_dir = ['/projects/rl54/data',]
-#out_dir = '/projects/rl54/results'
-#scratch_dir = '/fs03/rl54/'
+data_dir = ['/projects/rl54/data',]
+out_dir = '/projects/rl54/results'
+scratch_dir = '/fs03/rl54/'
 
 
 # ----------------
 # DL Machine Paths
 # ----------------
 
-data_dir = ['/home/abigail/data/plateseg-training/timeseries_seg',]
-out_dir = '/home/abigail/data/plateseg-training/timeseries_seg'
-scratch_dir = '/home/abigail/data/plateseg-training/timeseries_seg'
+#data_dir = ['/home/abigail/data/plateseg-training/timeseries_seg',]
+#out_dir = '/home/abigail/data/plateseg-training/timeseries_seg'
+#scratch_dir = '/home/abigail/data/plateseg-training/timeseries_seg'
 
 
 # -----------
