@@ -366,8 +366,8 @@ def get_labels_info(labels, images, channels_dict, meta, out_dir, id_str):
     one_voxel = meta['x'] * meta['y'] * meta['z']
     labs_df['volume'] = labs_df['area'] * one_voxel
     # get flatness (or lineness) scores
-    labs_df['elongation'] = np.sqrt(1 - labs_df['inertia_tensor_eigvals-2'] / labs_df['inertia_tensor_eigvals-0'])
-    labs_df['flatness'] = np.sqrt(1 - labs_df['inertia_tensor_eigvals-2'] / labs_df['inertia_tensor_eigvals-1'])
+    labs_df = add_elongation(labs_df)
+    labs_df = add_flatness(labs_df)
     # add file info
     labs_df['file'] = meta['file']
     labs_df['cohort'] = meta['cohort']
@@ -383,6 +383,16 @@ def get_labels_info(labels, images, channels_dict, meta, out_dir, id_str):
     meta['datetime'] = id_str
     meta['platelets_info_path'] = path
     return labs_df, path
+
+
+def add_elongation(df):
+    df['elongation'] = np.sqrt(1 - df['inertia_tensor_eigvals-2'] / df['inertia_tensor_eigvals-0'])
+    return df
+
+
+def add_flatness(df):
+    df['flatness'] = np.sqrt(1 - df['inertia_tensor_eigvals-2'] / df['inertia_tensor_eigvals-1'])
+    return df
 
 
 # -------
@@ -436,7 +446,7 @@ if __name__ == '__main__':
     #import argparse
     #p = argparse.ArgumentParser()
     #p.add_argument('-i', '--info', help='JSON file containing info for segmentation')
-    info_path = '/home/abigail/GitRepos/platelet-segmentation/untracked/inj4-dmso.json'
+    info_path = '/home/abigail/data/plateseg-training/timeseries_seg/210917_132116_seg-track/200514_IVMTR67_Inj7_dmso_exp3_seg-info.json'
     #args = p.parse_args()
     #info_path = args.info
     out_dir, image_path, scratch_dir, unet, batch_name = load_from_json(info_path)

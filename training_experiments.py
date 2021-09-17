@@ -159,7 +159,7 @@ mini_exp = get_experiment_dict(
 basic_exp = get_experiment_dict(
     [('z-1', 'y-1', 'x-1', 'mask', 'centreness-log')], 
     ['z-1_y-1_x-1_m_c'], 
-    n_each=25
+    n_each=30
 )
 
 def get_files(dirs, ends='.zarr'):
@@ -181,6 +181,6 @@ if __name__ == '__main__':
     out_dir = '/home/abigail/data/plateseg-training/training_output'
     dirs = ['/home/abigail/data/plateseg-training/training_gt/Pia', '/home/abigail/data/plateseg-training/training_gt/Volga']
     image_paths = get_files(dirs, ends='_image.zarr')
-    gt_paths = get_files(dirs, ends='_labels.zarr')
+    gt_paths = get_files(dirs, ends='_labels_no-worms.zarr')
     unets = run_experiment(basic_exp, image_paths, gt_paths, out_dir)
     
