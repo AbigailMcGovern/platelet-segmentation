@@ -5,6 +5,7 @@ import pandas as pd
 from pathlib import Path
 import numpy as np
 import napari
+from datetime import datetime
 
 
 def track(platelets):
@@ -43,8 +44,30 @@ def view_tracks(image, labels, df, scale=(1, 4, 1, 1), min_frames=20):
     napari.run()
 
 
+def track_from_path(path, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+    df = pd.read_csv(path)
+    df = track(df)
+    df = add_track_len(df)
+    tracks_name = Path(path).stem + '_tracks.csv'
+    tracks_path = os.path.join(out_dir, tracks_name)
+    df.to_csv(tracks_path)
+    return tracks_path
+
+
+def track_from_df(df, meta, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+    df = track(df)
+    df = add_track_len(df)
+    path = meta['platelets_info_path']
+    tracks_name = Path(path).stem + '_tracks.csv'
+    tracks_path = os.path.join(out_dir, tracks_name)
+    df.to_csv(tracks_path)
+    return tracks_name
+
+
 if __name__ == '__main__':
-    md_path = '/home/abigail/data/plateseg-training/timeseries_seg/debugging-seg-pipeline_segmentation-metadata.csv'
+    md_path = '/home/abigail/data/plateseg-training/timeseries_seg/inj-4-seg-pipeline_segmentation-metadata.csv'
     out_dir = '/home/abigail/data/plateseg-training/timeseries_seg'
     p_paths, meta = get_platelets_paths(md_path)
     t_paths = []
