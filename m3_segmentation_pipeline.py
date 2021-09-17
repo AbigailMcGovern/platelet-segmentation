@@ -4,14 +4,8 @@ from datetime import datetime
 now = datetime.now()
 dt = now.strftime("%y%m%d_%H%M%S")
 LOG_NAME = f'/projects/rl54/results/{dt}_segmentation-log.log'
-log_basic = False
-if log_basic:
-    logging.basicConfig(filename=LOG_NAME, encoding='utf-8', level=logging.DEBUG)
-else:
-    root_logger= logging.getLogger()
-    root_logger.setLevel(logging.DEBUG) 
-    handler = logging.FileHandler(LOG_NAME, 'w', 'utf-8') 
-    root_logger.addHandler(handler)
+log_basic = True
+logging.basicConfig(filename=LOG_NAME, encoding='utf-8', level=logging.DEBUG)
 logging.debug('Starting script...')
 
 
@@ -33,7 +27,6 @@ try:
     p = argparse.ArgumentParser()
     p.add_argument('-i', '--info', help='JSON file containing info for segmentation')
     args = p.parse_args()
-    args.info = '/Users/amcg0011/GitRepos/platelet-segmentation/untracked/local-seg.json'
     logging.debug('Parsed arguments.')
     info_path = args.info
     # load the required variables
