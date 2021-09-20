@@ -27,7 +27,7 @@ def write_bash_script(save_dir, batch_name, script_path, f):
     s = '#!/bin/bash\n'
     s = s + f'#SBATCH --job-name={job_name}\n'
     s = s + '#SBATCH --account=rl54\n'
-    s = s + '#SBATCH --time=03:00:00\n'
+    s = s + '#SBATCH --time=00:30:00\n'
     s = s + '#SBATCH --ntasks=1\n'
     s = s + '#SBATCH --mem=16G\n'
     s = s + '#SBATCH --cpus-per-task=1\n'

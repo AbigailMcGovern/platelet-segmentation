@@ -11,3 +11,6 @@
 source /projects/rl54/Abi/miniconda/bin/activate
 conda activate dl-env
 python /projects/rl54/segmentation/unet_training/platelet-segmentation/m3_make_jsons.py
+
+# sbatch /projects/rl54/segmentation/unet_training/platelet-segmentation/M3/make-jsons.sh
+# sbatch /projects/rl54/results/210917_143451_seg-track/191016_IVMTR12_Inj1_ctrl_exp3_job-script.sh

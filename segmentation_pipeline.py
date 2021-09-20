@@ -1,3 +1,4 @@
+from tracking import get_platelets_paths
 from scipy.ndimage.measurements import label
 from nd2_dask.nd2_reader import nd2_reader
 from nd2reader import ND2Reader
@@ -11,7 +12,7 @@ from unet import UNet
 import torch
 from pathlib import Path
 from plateseg.predict import predict_output_chunks, make_chunks
-from segmentation import segment_output_image
+from plateseg.watershed import segment_output_image
 import dask.array as da
 import json
 from time import time
@@ -20,6 +21,7 @@ from zarpaint._zarpaint import create_ts_meta
 import logging
 from datetime import datetime
 from tifffile import TiffWriter
+from tqdm import tqdm
 
 
 # Set up logging file in untracked local dir within repo
@@ -68,7 +70,7 @@ def read_image(image_path):
         images.append(layertuple[0])
         channels.append(channel)
         channels_dict[channel] = i
-    scale = [abs(scl) for scl in data['scale']]
+    scale = [scl for scl in data['scale']]
     translate = data['translate']
     image = image / np.max(image, axis=(1, 2, 3)).reshape((-1, 1, 1, 1))
     try:
@@ -135,7 +137,7 @@ def get_metadata(
         'translate' : translate,
     }
     axes = ['t', 'z', 'y', 'x']
-    metadata_dict.update(**{ m:scale[i] for i, m in enumerate(axes)})
+    metadata_dict.update(**{ m:abs(scale[i]) for i, m in enumerate(axes)})
     metadata_dict.update(**{ 'channel_'+ str(i):c for i, c in enumerate(channels)})
     metadata_dict.update(frame_rate = frame_rate)
     metadata_dict.update(roi_t = float(np.mean(rois['timepoints'])))
@@ -166,16 +168,6 @@ def segment_volume(
         labels = [labels,]
         image = [image, ]
         t = 0
-
-    # inner function
-    def segment(prediction, t):
-        yield from segment_output_image(
-            prediction,
-            affinities_channels=affinities_channels,
-            centroids_channel=centroids_channel,
-            thresholding_channel=thresholding_channel,
-            out=labels[t],
-        )
     # normalise the entire frame @ t -  as was done prior to training
     x_input = rescale_intensity(image[t].compute()).astype(np.float32)
     # predictions by unet
@@ -191,8 +183,9 @@ def segment_volume(
             tiff.save(prediction_output)
     # segment with affinities watershed
     logging.debug('Running affinities watershed...')
-    for i in segment(prediction_output, t):
-        pass
+    labels[t, :, :, :] = segment_output_image(prediction_output, affinities_channels=affinities_channels,
+                                  centroids_channel=centroids_channel,
+                                  thresholding_channel=thresholding_channel)[0]
 
 
 # ------------------
@@ -203,17 +196,17 @@ def segment_timeseries(image,
         unet, 
         meta, 
         out_dir, 
+        batch_name,
         create_ts_md=True,
         save_pred=None,
     ):
     frame = image.shape[1:]
     t_max = image.shape[0]
+    #padded_frame = [a + 2 for a in frame]
+    #padded_frame = tuple(padded_frame)
     # get the labels output volume to which to write frame labels
-    labels = [
-        zarr.zeros(frame, dtype=np.uint32, chunk_size=(1,) + frame)
-        for _ in range(t_max)
-    ]
-    for t in range(t_max):
+    labels = zarr.zeros(image.shape, dtype=np.uint32, chunk_size=(1,) + frame)
+    for t in tqdm(range(t_max)):
         segment_volume(image, unet, labels, t=t, save_pred=save_pred)
     # make cohort and treatment directories in scratch if they don't exist
     os.makedirs(os.path.join(out_dir, meta['cohort']), exist_ok=True)
@@ -221,13 +214,7 @@ def segment_timeseries(image,
     os.makedirs(nested_out_dir, exist_ok=True)
     # get the path to which to save 
     labels_name = dt + '_' + meta['file'] + '_labels.zarr'
-    labels_path = os.path.join(nested_out_dir, labels_name) 
-    # covert list of zarrs to single
-    full_labels = zarr.zeros(image.shape, dtype=np.uint32, chunk_size=(1,) + frame)
-    for i, za in enumerate(labels):
-        full_labels[i] = za
-    labels = full_labels
-    del full_labels
+    labels_path = get_labels_path(meta, out_dir, batch_name)
     # save the labels
     logging.debug(f'Saving labels zarr with shape {labels.shape} and chunks of shape {labels.chunks}...')
     zarr.save(labels_path, labels)
@@ -241,11 +228,17 @@ def segment_timeseries(image,
     return labels
 
 
+def get_labels_path(meta, out_dir, batch_name):
+    labels_name = batch_name + '_' + meta['file'] + '_labels.zarr'
+    nested_out_dir = os.path.join(out_dir, meta['cohort'], meta['treatment'])
+    labels_path = os.path.join(nested_out_dir, labels_name) 
+    return labels_path
+
 # ---------------------
 # Obtain Platelets Info
 # ---------------------
 
-def get_labels_info(labels, images, channels_dict, meta, out_dir, id_str):
+def get_labels_info(labels, images, channels_dict, meta, out_dir, batch_name, dt):
     '''
     Parameters
     ----------
@@ -307,7 +300,7 @@ def get_labels_info(labels, images, channels_dict, meta, out_dir, id_str):
     logging.debug(f'Channels dict: {channels_dict}')
     # go through each subsequent frame in the labels file
     counter = 0
-    for t in range(t_max):
+    for t in tqdm(range(t_max)):
         try:
             l_max = np.max(labels[t])
             logging.debug(f'labels max at {t}: {l_max}')
@@ -360,8 +353,11 @@ def get_labels_info(labels, images, channels_dict, meta, out_dir, id_str):
     labs_df = labs_df.rename(columns=rename)
     # add coloumn with coordinates in microns
     microns = ['zs', 'ys', 'xs']
+    factors = []
     for m, a in zip(microns, ax):
-        labs_df[m] = labs_df[a] * meta[a[0]]
+        mic_per_pix = meta[a[0]]
+        factors.append(mic_per_pix)
+        labs_df[m] = labs_df[a] * mic_per_pix
     # add volume column (in microns)
     one_voxel = meta['x'] * meta['y'] * meta['z']
     labs_df['volume'] = labs_df['area'] * one_voxel
@@ -374,13 +370,12 @@ def get_labels_info(labels, images, channels_dict, meta, out_dir, id_str):
     labs_df['treatment'] = meta['treatment']
     # save the results into a file structure that reflects that in which the 
     #   original data is saved
-    name = meta['file'] +'_' + id_str + '_platelet-coords.csv'
     os.makedirs(os.path.join(out_dir, meta['cohort']), exist_ok=True)
     info_out_dir = os.path.join(out_dir, meta['cohort'], meta['treatment'])
     os.makedirs(info_out_dir, exist_ok=True)
-    path = os.path.join(info_out_dir, name)
+    path = get_info_path(meta, out_dir, batch_name)
     labs_df.to_csv(path)
-    meta['datetime'] = id_str
+    meta['datetime'] = dt
     meta['platelets_info_path'] = path
     return labs_df, path
 
@@ -394,6 +389,12 @@ def add_flatness(df):
     df['flatness'] = np.sqrt(1 - df['inertia_tensor_eigvals-2'] / df['inertia_tensor_eigvals-1'])
     return df
 
+
+def get_info_path(meta, out_dir, batch_name):
+    name = batch_name + '_' + meta['file'] +'_platelet-coords.csv'
+    info_out_dir = os.path.join(out_dir, meta['cohort'], meta['treatment'])
+    path = os.path.join(info_out_dir, name)
+    return path
 
 # -------
 # Helpers
@@ -427,14 +428,10 @@ def load_from_json(info_path):
 
 
 def save_metadata(meta, out_dir, batch_name):
-    metadata_name = batch_name + '_segmentation-metadata.csv'
+    name = meta['file']
+    metadata_name = batch_name + '_' + name + '_seg-md.csv'
     metadata_path = os.path.join(out_dir, metadata_name)
-    if os.path.exists(metadata_path):
-        md = pd.read_csv(metadata_path)
-        new = pd.DataFrame([meta,])
-        md = pd.concat([md, new])
-    else:
-        md = pd.DataFrame([meta,])
+    md = pd.DataFrame([meta,])
     md.to_csv(metadata_path)
     logging.debug(f'Saved metadata at {metadata_path}')
 
@@ -446,16 +443,16 @@ if __name__ == '__main__':
     #import argparse
     #p = argparse.ArgumentParser()
     #p.add_argument('-i', '--info', help='JSON file containing info for segmentation')
-    info_path = '/home/abigail/data/plateseg-training/timeseries_seg/210917_132116_seg-track/200514_IVMTR67_Inj7_dmso_exp3_seg-info.json'
+    info_path = '/home/abigail/GitRepos/platelet-segmentation/segmentation-jsons/inj4-dmso_worms.json'
     #args = p.parse_args()
     #info_path = args.info
     out_dir, image_path, scratch_dir, unet, batch_name = load_from_json(info_path)
     images, image, meta, channels_dict = read_image(image_path)
     pred_name = os.path.join(out_dir, 'pred_volume.tif')
-    labels = segment_timeseries(image, unet, meta, scratch_dir, save_pred=pred_name)
-    #import zarr
-    #labels = zarr.open('/home/abigail/data/plateseg-training/timeseries_seg/plateseg-training/timeseries_seg/210914_195928_191016_IVMTR12_Inj4_cang_exp3_labels.zarr')
-    df, _ = get_labels_info(labels, images, channels_dict, meta, out_dir, dt)
+    #labels = segment_timeseries(image, unet, meta, scratch_dir, batch_name, save_pred=pred_name)
+    import zarr
+    labels = zarr.open('/home/abigail/data/plateseg-training/timeseries_seg/plateseg-training/timeseries_seg/210914_195928_191016_IVMTR12_Inj4_cang_exp3_labels.zarr')
+    df, _ = get_labels_info(labels, images, channels_dict, meta, out_dir, batch_name, dt)
     save_metadata(meta, out_dir, batch_name)
     import napari
     v = napari.view_image(image, scale=(1, 4, 1, 1), blending='additive')
