@@ -27,7 +27,7 @@ def write_bash_script(save_dir, batch_name, script_path, f):
     s = '#!/bin/bash\n'
     s = s + f'#SBATCH --job-name={job_name}\n'
     s = s + '#SBATCH --account=rl54\n'
-    s = s + '#SBATCH --time=03:00:00\n'
+    s = s + '#SBATCH --time=00:30:00\n'
     s = s + '#SBATCH --ntasks=1\n'
     s = s + '#SBATCH --mem=16G\n'
     s = s + '#SBATCH --cpus-per-task=1\n'
@@ -62,18 +62,18 @@ def write_json(json_path, out_dir, image_path, scratch_dir, unet_path, batch_nam
 # MASSIVE Paths
 # -------------
 
-#data_dir = ['/projects/rl54/data',]
-#out_dir = '/projects/rl54/results'
-#scratch_dir = '/fs03/rl54/'
+data_dir = ['/projects/rl54/data',]
+out_dir = '/projects/rl54/results'
+scratch_dir = '/fs03/rl54/'
 
 
 # ----------------
 # DL Machine Paths
 # ----------------
 
-data_dir = ['/home/abigail/data/plateseg-training/timeseries_seg',]
-out_dir = '/home/abigail/data/plateseg-training/timeseries_seg'
-scratch_dir = '/home/abigail/data/plateseg-training/timeseries_seg'
+#data_dir = ['/home/abigail/data/plateseg-training/timeseries_seg',]
+#out_dir = '/home/abigail/data/plateseg-training/timeseries_seg'
+#scratch_dir = '/home/abigail/data/plateseg-training/timeseries_seg'
 
 
 # -----------
